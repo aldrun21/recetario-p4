@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "patient": {
+      "title": "Patient",
+      "description": "Information about a clinical patient",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Given first name of the patient" },
+        "lastName": { "type": "string", "description": "Last name of the patient" },
+        "dob": { "type": "string", "format": "date", "description": "Date of birth" },
+        "gender": { "type": "string", "description": "Gender of the patient" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "email": { "type": "string", "description": "Contact email address" },
+        "allergies": { "type": "string", "description": "List of allergies or medical contraindications" },
+        "history": { "type": "string", "description": "Medical history summary" },
+        "createdAt": { "type": "string", "description": "Timestamp when the patient was registered" },
+        "createdBy": { "type": "string", "description": "UID of the doctor who registered this patient" }
+      },
+      "required": ["name", "lastName", "createdBy"]
+    },
+    "prescription": {
+      "title": "Prescription",
+      "description": "Medical prescription issued to a patient",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string", "description": "ID of the associated patient" },
+        "patientName": { "type": "string", "description": "Cached full name of the patient for performance" },
+        "diagnosis": { "type": "string", "description": "Clinical diagnosis" },
+        "instructions": { "type": "string", "description": "General non-pharmacological instructions" },
+        "medications": { "type": "string", "description": "Serialized JSON or structured string of medications to prevent un-indexed nested object limits" },
+        "createdAt": { "type": "string", "description": "Timestamp of prescription issuance" },
+        "createdBy": { "type": "string", "description": "UID of the prescribing doctor" },
+        "doctorName": { "type": "string", "description": "Name of the issuing doctor" },
+        "doctorLicense": { "type": "string", "description": "Medical license or license ID" },
+        "clinicName": { "type": "string", "description": "Clinic where the prescription was generated" }
+      },
+      "required": ["patientId", "patientName", "diagnosis", "medications", "createdBy"]
+    },
+    "doctorProfile": {
+      "title": "Doctor Profile",
+      "description": "Professional profile and credentials of the practicing doctor",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the doctor" },
+        "specialty": { "type": "string", "description": "Medical specialty" },
+        "licenseId": { "type": "string", "description": "Professional registration or medical license" },
+        "clinicName": { "type": "string", "description": "Name of the medical clinic or hospital" },
+        "address": { "type": "string", "description": "Physical address of the office or clinic" },
+        "phone": { "type": "string", "description": "Office contact phone number" },
+        "updatedAt": { "type": "string", "description": "Last updated timestamp" }
+      },
+      "required": ["name", "licenseId"]
+    },
+    "catalogMedication": {
+      "title": "Catalog Medication",
+      "description": "Saved formula or medication compound in doctor catalog",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "genericName": { "type": "string" },
+        "commercialName": { "type": "string" },
+        "concentration": { "type": "string" },
+        "pharmaceuticalForm": { "type": "string" },
+        "quantity": { "type": "string" },
+        "baseInstruction": { "type": "string" },
+        "route": { "type": "string" },
+        "frequency": { "type": "string" },
+        "applicationSite": { "type": "string" },
+        "treatmentPeriod": { "type": "string" },
+        "fullIndication": { "type": "string" },
+        "name": { "type": "string" },
+        "dose": { "type": "string" },
+        "duration": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["category", "createdBy"]
+    }
+  },
+  "firestore": {
+    "/patients/{patientId}": {
+      "schema": { "$ref": "patient" },
+      "description": "Collection of patients"
+    },
+    "/prescriptions/{prescriptionId}": {
+      "schema": { "$ref": "prescription" },
+      "description": "Collection of medical prescriptions"
+    },
+    "/doctors/{doctorId}": {
+      "schema": { "$ref": "doctorProfile" },
+      "description": "Collection of doctor profiles indexed by auth UID"
+    },
+    "/medications_catalog/{medId}": {
+      "schema": { "$ref": "catalogMedication" },
+      "description": "Collection of formulas and catalog medications"
+    },
+    "/custom_presets/{presetId}": {
+      "description": "Custom options and presets for posology"
+    }
+  }
+}

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-rose: #d58e82;
+  --color-brand-sand: #c59275;
+  --color-brand-charcoal: #2d2a29;
+  --color-brand-linen: #fbfaf8;
+  --color-brand-border: #eae6e1;
+
+  --radius-3xl: 8px;
+  --radius-2xl: 6px;
+  --radius-xl: 5px;
+  --radius-lg: 4px;
+  --radius-md: 3px;
+  --radius-sm: 2px;
+}
+
+@media print {
+  @page {
+    size: 21cm 28cm;
+    margin: 0;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Hide everything except the printable prescription */
+  body * {
+    visibility: hidden;
+  }
+  #printable-prescription, #printable-prescription * {
+    visibility: visible;
+  }
+  #printable-prescription {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 21cm;
+    height: 28cm;
+    box-sizing: border-box;
+    padding: 1.5cm 1.5cm 1.5cm 1.5cm !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background-color: white !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+@keyframes infinite-scroll {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-infinite-scroll {
+  animation: infinite-scroll 1.5s infinite linear;
+}
+

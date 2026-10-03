@@ -1,0 +1,6 @@
+{
+  "name": "RecetaMedica Realtime",
+  "description": "Plataforma de gestión de recetas médicas y pacientes con sincronización en tiempo real entre múltiples dispositivos y asistencia de IA Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
