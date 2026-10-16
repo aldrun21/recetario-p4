@@ -34,7 +34,7 @@ import {
   ChevronDown,
   Download
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { 
   checkKvHealth, 
@@ -175,8 +175,8 @@ export const DEFAULT_PRESETS: CustomPresets = {
     '1 caja'
   ],
   baseInstructions: [
-    'Capa fina sobre las lesiones',
-    'Aplicar capa fina',
+    'Aplicar una capa fina sobre las lesiones',
+    'Aplicar una capa fina',
     'Aplicar cantidad moderada',
     '1 cápsula con agua',
     '3 a 5 gotas'
@@ -198,12 +198,12 @@ export const DEFAULT_PRESETS: CustomPresets = {
     'Por la noche'
   ],
   applicationSites: [
-    'Lesiones de brazo',
-    'Cara',
-    'Cuero cabelludo',
-    'Zona afectada',
-    'Espalda',
-    'Manos'
+    'del brazo',
+    'en la cara',
+    'en el cuero cabelludo',
+    'en la zona afectada',
+    'en la espalda',
+    'en las manos'
   ],
   treatmentPeriods: [
     '7 días',
@@ -219,20 +219,20 @@ export const DEFAULT_CATALOG_MEDICATIONS: CatalogMedication[] = [
   {
     id: 'cat_med_1',
     category: 'Fórmula Magistral',
-    genericName: 'Clobetasol Propionato 0,05%',
-    commercialName: 'Clopicar Crema',
-    concentration: '0,05% — tubo 25 g',
-    pharmaceuticalForm: 'Crema',
+    genericName: 'Clobetasol propionato',
+    commercialName: 'Clopicar',
+    concentration: '0,05 %',
+    pharmaceuticalForm: 'crema',
     quantity: '1 tubo',
-    baseInstruction: 'Capa fina sobre las lesiones',
+    baseInstruction: 'Aplicar una capa fina sobre las lesiones',
     route: 'Tópica',
     frequency: '2 veces al día',
-    applicationSite: 'Lesiones de piel',
-    treatmentPeriod: '2 semanas',
-    fullIndication: 'Aplicar capa fina por vía tópica, 2 veces al día, en lesiones de piel, durante 2 semanas.',
-    name: 'Clopicar Crema (Clobetasol Propionato 0,05%)',
-    dose: '0,05% — tubo 25 g • Crema • Cant: 1 tubo',
-    duration: '2 semanas',
+    applicationSite: 'del brazo',
+    treatmentPeriod: '3 semanas',
+    fullIndication: 'Aplicar una capa fina sobre las lesiones del brazo, 2 veces al día durante 3 semanas.',
+    name: 'Clobetasol propionato 0,05 % crema (Clopicar) # 1 tubo',
+    dose: '0,05 % • crema • Cant: 1 tubo',
+    duration: '3 semanas',
     notes: 'No aplicar en párpados ni mucosas. Evitar exposición solar.',
     createdAt: new Date().toISOString(),
     createdBy: 'karolt'
@@ -669,86 +669,216 @@ export function formatStructuredIndication({
     return '';
   }
 
-  // 1. Action verb phrase from baseInstruction
-  let verbPhrase = cleanBase;
+  // 1. Build Base Action phrase
+  let actionPhrase = cleanBase;
   if (cleanBase) {
     const lowerRoute = cleanRoute.toLowerCase();
     const lowerBase = cleanBase.toLowerCase();
 
-    if (lowerRoute.includes('tóp') || lowerRoute.includes('top')) {
-      if (lowerBase.startsWith('capa fina sobre las lesiones') || lowerBase === 'capa fina sobre las lesiones') {
-        verbPhrase = 'Aplicar capa fina';
-      } else if (!lowerBase.startsWith('aplicar') && !lowerBase.startsWith('colocar') && !lowerBase.startsWith('untar')) {
-        verbPhrase = `Aplicar ${cleanBase.charAt(0).toLowerCase() + cleanBase.slice(1)}`;
+    if (lowerRoute.includes("tóp") || lowerRoute.includes("top") || !cleanRoute) {
+      if (lowerBase.startsWith("capa fina sobre las lesiones")) {
+        actionPhrase = "Aplicar una capa fina sobre las lesiones";
+      } else if (lowerBase.startsWith("capa fina")) {
+        actionPhrase = "Aplicar una capa fina";
+      } else if (!lowerBase.startsWith("aplicar") && !lowerBase.startsWith("colocar") && !lowerBase.startsWith("untar")) {
+        actionPhrase = "Aplicar " + cleanBase.charAt(0).toLowerCase() + cleanBase.slice(1);
       }
-    } else if (lowerRoute.includes('oral')) {
-      if (!lowerBase.startsWith('tomar') && !lowerBase.startsWith('ingerir') && !lowerBase.startsWith('beber')) {
-        verbPhrase = `Tomar ${cleanBase.charAt(0).toLowerCase() + cleanBase.slice(1)}`;
+    } else if (lowerRoute.includes("oral")) {
+      if (!lowerBase.startsWith("tomar") && !lowerBase.startsWith("ingerir") && !lowerBase.startsWith("beber")) {
+        actionPhrase = "Tomar " + cleanBase.charAt(0).toLowerCase() + cleanBase.slice(1);
       }
     }
   }
 
-  // 2. Route phrase
-  let routePhrase = '';
-  if (cleanRoute) {
-    const lower = cleanRoute.toLowerCase();
-    if (lower.startsWith('por vía') || lower.startsWith('por via') || lower.startsWith('vía') || lower.startsWith('via')) {
-      routePhrase = cleanRoute;
-    } else {
-      routePhrase = `por vía ${lower}`;
-    }
-  }
-
-  // 3. Frequency phrase
-  let freqPhrase = cleanFreq;
-
-  // 4. Site phrase
-  let sitePhrase = '';
+  // 2. Attach site to action smoothly
+  let mainActionAndSite = actionPhrase;
   if (cleanSite) {
-    const lower = cleanSite.toLowerCase();
-    if (lower.startsWith('en ') || lower.startsWith('sobre ') || lower.startsWith('a nivel de ')) {
-      sitePhrase = cleanSite;
+    let siteText = cleanSite;
+    const lowerSite = cleanSite.toLowerCase();
+    const lowerAction = actionPhrase.toLowerCase();
+
+    if (lowerAction.includes("sobre las lesiones") && (lowerSite.startsWith("lesiones de ") || lowerSite.startsWith("lesiones del "))) {
+      const rest = cleanSite.replace(/^lesiones de[l]?\s+/i, "");
+      siteText = "del " + rest;
+    }
+
+    if (lowerAction.endsWith("sobre las lesiones") || lowerAction.endsWith("en las lesiones")) {
+      if (siteText.toLowerCase().startsWith("del ") || siteText.toLowerCase().startsWith("de ")) {
+        mainActionAndSite = actionPhrase + " " + siteText;
+      } else if (siteText.toLowerCase().startsWith("en ")) {
+        mainActionAndSite = actionPhrase + " " + siteText;
+      } else {
+        mainActionAndSite = actionPhrase + " en " + siteText;
+      }
+    } else if (lowerAction) {
+      if (siteText.toLowerCase().startsWith("en ") || siteText.toLowerCase().startsWith("sobre ") || siteText.toLowerCase().startsWith("del ")) {
+        mainActionAndSite = actionPhrase + " " + siteText;
+      } else {
+        mainActionAndSite = actionPhrase + " en " + siteText.toLowerCase();
+      }
     } else {
-      sitePhrase = `en ${lower}`;
+      mainActionAndSite = siteText;
     }
   }
 
-  // 5. Period phrase
-  let periodPhrase = '';
+  // 3. Optional route: Only include route if NOT Tópica
+  let routeClause = "";
+  if (cleanRoute && !cleanRoute.toLowerCase().includes("tóp") && !cleanRoute.toLowerCase().includes("top")) {
+    if (cleanRoute.toLowerCase().startsWith("por vía") || cleanRoute.toLowerCase().startsWith("vía")) {
+      routeClause = cleanRoute;
+    } else {
+      routeClause = "por vía " + cleanRoute.toLowerCase();
+    }
+  }
+
+  if (routeClause) {
+    mainActionAndSite = mainActionAndSite + " " + routeClause;
+  }
+
+  // 4. Frequency phrase
+  const freqPhrase = cleanFreq;
+
+  // 5. Period phrase (e.g. "durante 3 semanas")
+  let periodPhrase = "";
   if (cleanPeriod) {
-    const lower = cleanPeriod.toLowerCase();
-    if (lower.startsWith('durante ') || lower.startsWith('por ')) {
+    const lowerPeriod = cleanPeriod.toLowerCase();
+    if (lowerPeriod.startsWith("durante ") || lowerPeriod.startsWith("por ")) {
       periodPhrase = cleanPeriod;
     } else {
-      periodPhrase = `durante ${lower}`;
+      periodPhrase = "durante " + lowerPeriod;
     }
   }
 
-  // Combine clauses: "Aplicar capa fina por vía tópica, 2 veces al día, en lesiones de brazo, durante 3 semanas."
-  const clauses: string[] = [];
+  // Assemble full sentence: "Aplicar una capa fina sobre las lesiones del brazo, 2 veces al día durante 3 semanas."
+  let sentence = mainActionAndSite.trim();
 
-  if (verbPhrase && routePhrase) {
-    clauses.push(`${verbPhrase} ${routePhrase}`);
-  } else if (verbPhrase) {
-    clauses.push(verbPhrase);
-  } else if (routePhrase) {
-    clauses.push(routePhrase);
+  if (freqPhrase && periodPhrase) {
+    if (sentence) {
+      sentence += ", " + freqPhrase + " " + periodPhrase;
+    } else {
+      sentence = freqPhrase + " " + periodPhrase;
+    }
+  } else if (freqPhrase) {
+    if (sentence) {
+      sentence += ", " + freqPhrase;
+    } else {
+      sentence = freqPhrase;
+    }
+  } else if (periodPhrase) {
+    if (sentence) {
+      sentence += " " + periodPhrase;
+    } else {
+      sentence = periodPhrase;
+    }
   }
 
-  if (freqPhrase) clauses.push(freqPhrase);
-  if (sitePhrase) clauses.push(sitePhrase);
-  if (periodPhrase) clauses.push(periodPhrase);
-
-  let result = clauses.join(', ');
-  if (result && !result.endsWith('.')) {
-    result += '.';
+  sentence = sentence.trim();
+  if (sentence && !sentence.endsWith(".")) {
+    sentence += ".";
   }
 
-  if (result.length > 0) {
-    result = result.charAt(0).toUpperCase() + result.slice(1);
+  if (sentence.length > 0) {
+    sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
   }
 
-  return result;
+  return sentence;
+}
+
+export interface MedicationLike {
+  genericName?: string;
+  commercialName?: string;
+  concentration?: string;
+  pharmaceuticalForm?: string;
+  quantity?: string;
+  baseInstruction?: string;
+  route?: string;
+  frequency?: string;
+  applicationSite?: string;
+  treatmentPeriod?: string;
+  fullIndication?: string;
+  name?: string;
+  dose?: string;
+  duration?: string;
+  notes?: string;
+  customNotes?: string;
+}
+
+// Format Line 1: "1. Clobetasol propionato 0,05 % crema (Clopicar) # 1 tubo"
+export function formatMedicationLine1(med: MedicationLike, index?: number): string {
+  const prefix = typeof index === "number" ? (index + 1) + ". " : "";
+
+  const generic = (med.genericName || "").trim();
+  const commercial = (med.commercialName || "").trim();
+  const concentration = (med.concentration || "").trim();
+  const form = (med.pharmaceuticalForm || "").trim();
+  const quantity = (med.quantity || "").trim();
+
+  let namePart = "";
+
+  if (generic) {
+    namePart = generic;
+    if (concentration && !namePart.toLowerCase().includes(concentration.toLowerCase())) {
+      namePart += " " + concentration;
+    }
+    if (form && !namePart.toLowerCase().includes(form.toLowerCase())) {
+      namePart += " " + form.toLowerCase();
+    }
+    if (commercial) {
+      let cleanComm = commercial;
+      if (form && cleanComm.toLowerCase().endsWith(form.toLowerCase())) {
+        cleanComm = cleanComm.slice(0, -form.length).trim();
+      }
+      if (!namePart.toLowerCase().includes(cleanComm.toLowerCase())) {
+        namePart += " (" + cleanComm + ")";
+      }
+    }
+  } else if (commercial) {
+    namePart = commercial;
+    if (concentration && !namePart.toLowerCase().includes(concentration.toLowerCase())) {
+      namePart += " " + concentration;
+    }
+    if (form && !namePart.toLowerCase().includes(form.toLowerCase())) {
+      namePart += " " + form.toLowerCase();
+    }
+  } else if (med.name) {
+    namePart = med.name;
+  }
+
+  // Format quantity: "# 1 tubo"
+  let qtyPart = "";
+  if (quantity) {
+    const cleanQty = quantity.replace(/^#\s*/, "").replace(/^cant:?\s*/i, "").trim();
+    if (cleanQty) {
+      qtyPart = "# " + cleanQty;
+    }
+  }
+
+  const fullLine = [namePart, qtyPart].filter(Boolean).join("   ").trim();
+  return prefix + fullLine;
+}
+
+// Format Line 2: "Aplicar una capa fina sobre las lesiones del brazo, 2 veces al día durante 3 semanas."
+export function formatMedicationLine2(med: MedicationLike): string {
+  if (med.baseInstruction || med.frequency || med.applicationSite || med.treatmentPeriod) {
+    const structured = formatStructuredIndication({
+      baseInstruction: med.baseInstruction,
+      route: med.route,
+      frequency: med.frequency,
+      applicationSite: med.applicationSite,
+      treatmentPeriod: med.treatmentPeriod || (med as any).duration
+    });
+    if (structured) return structured;
+  }
+
+  if (med.fullIndication && med.fullIndication.trim()) {
+    return med.fullIndication
+      .replace(/\s*por vía tópica,\s*/gi, " ")
+      .replace(/\s*,\s*durante\s+/gi, " durante ")
+      .trim();
+  }
+
+  if (med.notes && med.notes.trim()) return med.notes.trim();
+  return [med.dose, med.frequency, (med as any).duration].filter(Boolean).join(" • ");
 }
 
 interface DoctorProfile {
@@ -1748,24 +1878,77 @@ export default function App() {
     setIsDownloadingPdf(true);
     try {
       const element = printAreaRef.current;
+
+      // Exact A4 dimensions: 210mm x 297mm
+      // Standard 150 PPI pixel resolution for A4:
+      // Width  = (210 mm / 25.4) * 150 = 1240.15 px -> 1240 px
+      // Height = (297 mm / 25.4) * 150 = 1753.94 px -> 1754 px
+      const TARGET_WIDTH = 1240;
+      const TARGET_HEIGHT = 1754;
+
+      // Base desktop reference width: 800px
+      // Height to maintain exact A4 ratio: 800 * (1754 / 1240) = 1131.6px (~1132px)
+      // Scale factor: 1240 / 800 = 1.55x -> produces exactly 1240x1754 at 150 PPI
+      const BASE_WIDTH = 800;
+      const BASE_HEIGHT = 1132;
+      const SCALE_FACTOR = TARGET_WIDTH / BASE_WIDTH; // 1.55
+
       const canvas = await html2canvas(element, {
-        scale: 2.5,
+        scale: SCALE_FACTOR,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        windowWidth: 1024,
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.getElementById('printable-prescription');
+          if (clonedElement) {
+            clonedElement.style.width = `${BASE_WIDTH}px`;
+            clonedElement.style.minWidth = `${BASE_WIDTH}px`;
+            clonedElement.style.maxWidth = `${BASE_WIDTH}px`;
+            clonedElement.style.height = `${BASE_HEIGHT}px`;
+            clonedElement.style.minHeight = `${BASE_HEIGHT}px`;
+            clonedElement.style.maxHeight = `${BASE_HEIGHT}px`;
+            clonedElement.style.display = 'flex';
+            clonedElement.style.flexDirection = 'column';
+            clonedElement.style.justifyContent = 'space-between';
+            clonedElement.style.padding = '36px 44px 0px 44px';
+            clonedElement.style.boxShadow = 'none';
+            clonedElement.style.border = 'none';
+            clonedElement.style.borderRadius = '0';
+            clonedElement.style.backgroundColor = '#ffffff';
+
+            // Ensure bottom segment sits at the absolute bottom
+            const bottomSegment = clonedElement.querySelector('.mt-auto') || clonedElement.lastElementChild;
+            if (bottomSegment instanceof HTMLElement) {
+              bottomSegment.style.marginTop = 'auto';
+            }
+
+            // Make the social footer banner sit flush against the bottom edge of the A4 page
+            const footerBanner = clonedElement.querySelector('.bg-\\[\\#cc8576\\]') as HTMLElement | null;
+            if (footerBanner) {
+              footerBanner.style.marginLeft = '-44px';
+              footerBanner.style.marginRight = '-44px';
+              footerBanner.style.marginBottom = '0px';
+              footerBanner.style.borderRadius = '0px';
+              footerBanner.style.paddingTop = '10px';
+              footerBanner.style.paddingBottom = '10px';
+            }
+          }
+        }
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const imgData = canvas.toDataURL('image/jpeg', 0.96);
+
+      // Create PDF in A4 format (210mm x 297mm)
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: 'a4'
+        format: 'a4',
+        compress: true
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      // Render full bleed across the A4 sheet: width 210mm, height 297mm
+      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
 
       const patientSlug = (selectedPrescription.patientName || 'Paciente')
         .trim()
@@ -1774,10 +1957,27 @@ export default function App() {
       const dateSlug = (selectedPrescription.createdAt || new Date().toISOString()).split('T')[0];
       const filename = `Receta_${patientSlug}_${dateSlug}.pdf`;
 
-      pdf.save(filename);
+      // Dual-strategy download for desktop & mobile browsers
+      try {
+        pdf.save(filename);
+      } catch (saveErr) {
+        console.warn('pdf.save failed, using direct anchor fallback:', saveErr);
+        const blob = pdf.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(blobUrl);
+        }, 4000);
+      }
     } catch (error: any) {
       console.error('Error generating PDF:', error);
-      alert('Hubo un inconveniente al generar el PDF. Puedes utilizar el botón "Imprimir" como alternativa.');
+      window.print();
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -2560,7 +2760,7 @@ export default function App() {
                       {/* MEDICAL PRESCRIPTION SHEET (PERFECT RENDER FOR THE DOCTOR) */}
                       <div 
                         ref={printAreaRef}
-                        className="bg-white rounded-2xl border border-brand-border shadow-lg p-6 sm:p-8 md:p-12 space-y-6 relative overflow-hidden flex flex-col justify-between select-none min-w-[620px] sm:min-w-0 mx-auto"
+                        className="bg-white rounded-2xl border border-brand-border shadow-lg p-6 sm:p-8 md:p-12 space-y-6 relative overflow-hidden flex flex-col justify-between select-none min-w-[620px] sm:min-w-0 mx-auto min-h-[750px] sm:min-h-[850px] md:min-h-[920px]"
                         id="printable-prescription"
                       >
                         <div>
@@ -2687,86 +2887,55 @@ export default function App() {
                           </div>
 
                           {/* Rx section heading */}
-                          <h3 className="text-lg font-black text-brand-charcoal tracking-tight mt-6">Prescripción de Medicamentos</h3>
-                          <div className="border-b border-[#eae6e1] mt-2 mb-4"></div>
+                          <div className="mt-7 space-y-3">
+                            <div className="flex items-center justify-between border-b border-[#eae6e1] pb-2">
+                              <h3 className="text-base sm:text-lg font-black text-brand-charcoal tracking-tight">Prescripción de Medicamentos</h3>
+                              <span className="text-[10px] sm:text-[11px] font-bold text-[#b57367] uppercase tracking-wider">Tratamiento e Indicaciones</span>
+                            </div>
 
-                          {/* Rx Table */}
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs border-collapse">
-                              <thead>
-                                <tr className="bg-[#fbf5f4] text-[10px] font-bold text-[#b57367] uppercase tracking-wider">
-                                  <th className="py-2.5 px-3 font-bold rounded-l-lg">MEDICAMENTO / PRESENTACIÓN</th>
-                                  <th className="py-2.5 px-3 font-bold">INDICACIONES Y POSOLOGÍA</th>
-                                  <th className="py-2.5 px-3 font-bold">DURACIÓN</th>
-                                  <th className="py-2.5 px-3 font-bold rounded-r-lg">OBSERVACIONES</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {(() => {
-                                  try {
-                                    const items: MedicationItem[] = JSON.parse(selectedPrescription.medications);
-                                    return items.map((med, idx) => {
-                                      const primaryName = med.commercialName || med.genericName || med.name;
-                                      const secondaryName = (med.commercialName && med.genericName) ? med.genericName : '';
-                                      const presentationInfo = [
-                                        med.concentration,
-                                        med.pharmaceuticalForm,
-                                        med.quantity ? `Cant: ${med.quantity}` : ''
-                                      ].filter(Boolean).join(' • ');
-
-                                      const indicationText = med.fullIndication || (
-                                        [med.dose, med.frequency].filter(Boolean).join(' • ')
-                                      );
-
-                                      return (
-                                        <tr key={idx} className="hover:bg-slate-50/20 text-slate-700">
-                                          <td className="py-3 px-3">
-                                            <div className="font-bold text-brand-charcoal text-[13px] leading-tight">
-                                              {primaryName}
-                                              {secondaryName && (
-                                                <span className="font-normal text-slate-500 text-[11px] ml-1.5">
-                                                  ({secondaryName})
-                                                </span>
-                                              )}
-                                            </div>
-                                            {presentationInfo ? (
-                                              <div className="text-[10.5px] text-[#b57367] font-semibold mt-0.5">
-                                                {presentationInfo}
-                                              </div>
-                                            ) : (
-                                              med.dose && <div className="text-[10.5px] text-slate-400 font-medium mt-0.5">{med.dose}</div>
-                                            )}
-                                          </td>
-                                          <td className="py-3 px-3">
-                                            <div className="font-medium text-slate-800 text-[11.5px] leading-relaxed">
-                                              {indicationText}
-                                            </div>
-                                            {med.route && med.frequency && (
-                                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                                Vía: <strong className="text-slate-600">{med.route}</strong> • Frecuencia: <strong className="text-slate-600">{med.frequency}</strong>
-                                                {med.applicationSite && <> • Lugar: <strong className="text-slate-600">{med.applicationSite}</strong></>}
-                                              </div>
-                                            )}
-                                          </td>
-                                          <td className="py-3 px-3 font-semibold text-slate-700 text-xs">
-                                            {med.treatmentPeriod || med.duration || '-'}
-                                          </td>
-                                          <td className="py-3 px-3 text-slate-500 italic text-[11px]">
-                                            {med.notes && med.notes !== med.fullIndication ? med.notes : '-'}
-                                          </td>
-                                        </tr>
-                                      );
-                                    });
-                                  } catch (e) {
-                                    return (
-                                      <tr>
-                                        <td colSpan={4} className="py-4 text-center text-red-500 text-xs">Error al cargar tratamiento</td>
-                                      </tr>
-                                    );
+                            {/* Clean Medical Prescription Items List */}
+                            <div className="space-y-6 pt-2">
+                              {(() => {
+                                try {
+                                  const items: MedicationItem[] = JSON.parse(selectedPrescription.medications);
+                                  if (!items || items.length === 0) {
+                                    return <p className="text-xs text-slate-400 italic py-4 text-center">No se registraron medicamentos para esta receta.</p>;
                                   }
-                                })()}
-                              </tbody>
-                            </table>
+
+                                  return items.map((med, idx) => {
+                                    const line1 = formatMedicationLine1(med, idx);
+                                    const line2 = formatMedicationLine2(med);
+
+                                    return (
+                                      <div key={idx} className="space-y-1.5 text-left">
+                                        {/* Line 1: 1. Clobetasol propionato 0,05 % crema (Clopicar) # 1 tubo */}
+                                        <div className="font-bold text-slate-900 text-[14px] md:text-[15px] leading-snug tracking-tight">
+                                          {line1}
+                                        </div>
+
+                                        {/* Line 2: Aplicar una capa fina sobre las lesiones del brazo, 2 veces al día durante 3 semanas. */}
+                                        {line2 && (
+                                          <div className="text-slate-700 font-normal text-[13px] md:text-[13.5px] leading-relaxed pl-4 sm:pl-5">
+                                            {line2}
+                                          </div>
+                                        )}
+
+                                        {/* Additional custom notes if present and distinct */}
+                                        {med.notes && med.notes !== med.fullIndication && med.notes !== line2 && med.notes.trim() !== "" && (
+                                          <div className="text-[11.5px] text-[#b57367] italic pl-4 sm:pl-5">
+                                            Nota: {med.notes}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  });
+                                } catch (e) {
+                                  return (
+                                    <div className="py-4 text-center text-red-500 text-xs">Error al cargar tratamiento</div>
+                                  );
+                                }
+                              })()}
+                            </div>
                           </div>
 
                           {/* Non-pharmacological advice */}
@@ -2782,7 +2951,7 @@ export default function App() {
                         </div>
 
                         {/* Bottom Segment: Signature & Social Footer */}
-                        <div className="space-y-6 pt-8 shrink-0">
+                        <div className="space-y-6 mt-auto pt-8 shrink-0">
                           {/* Doctor's Signature space */}
                           <div className="flex flex-col items-center justify-center text-center">
                             <div className="w-64 border-b border-slate-300 pb-1">
@@ -3407,34 +3576,18 @@ export default function App() {
                           </div>
 
                           <h4 className="font-bold text-sm text-brand-charcoal group-hover:text-brand-rose transition leading-snug">
-                            {med.commercialName || med.genericName || med.name}
-                            {med.commercialName && med.genericName && (
-                              <span className="font-normal text-slate-500 text-xs ml-1.5">({med.genericName})</span>
-                            )}
+                            {formatMedicationLine1(med)}
                           </h4>
                           
                           <div className="text-xs text-slate-600 space-y-1.5 pt-1 border-t border-brand-border/40">
-                            {(med.concentration || med.pharmaceuticalForm || med.quantity) ? (
-                              <p className="text-[11px] text-[#b57367] font-semibold">
-                                {[med.concentration, med.pharmaceuticalForm, med.quantity ? `Cant: ${med.quantity}` : ''].filter(Boolean).join(' • ')}
+                            <div className="bg-white p-2.5 rounded-lg border border-brand-border/40 space-y-1">
+                              <span className="block text-[9.5px] font-bold text-brand-rose uppercase tracking-wider">Posología e Indicación:</span>
+                              <p className="text-[12px] text-slate-800 font-medium italic leading-relaxed">
+                                "{formatMedicationLine2(med)}"
                               </p>
-                            ) : (
-                              med.dose && <p><strong className="text-slate-700">Dosis:</strong> {med.dose}</p>
-                            )}
-
-                            {med.fullIndication ? (
-                              <div className="bg-white p-2 rounded-lg border border-brand-border/40 space-y-1">
-                                <span className="block text-[9.5px] font-bold text-brand-rose uppercase tracking-wider">Posología:</span>
-                                <p className="text-[11.5px] text-slate-800 font-medium italic leading-relaxed">
-                                  "{med.fullIndication}"
-                                </p>
-                              </div>
-                            ) : (
-                              <>
-                                {med.frequency && <p><strong className="text-slate-700">Frecuencia:</strong> {med.frequency}</p>}
-                                {med.duration && <p><strong className="text-slate-700">Duración:</strong> {med.duration}</p>}
-                                {med.notes && <p className="text-slate-500 italic text-[11px] mt-1 bg-white p-2 rounded-lg border border-brand-border/30">"{med.notes}"</p>}
-                              </>
+                            </div>
+                            {med.customNotes && med.customNotes !== med.fullIndication && med.customNotes.trim() !== "" && (
+                              <p className="text-slate-500 italic text-[11px] px-1">Obs: {med.customNotes}</p>
                             )}
                           </div>
                         </div>
@@ -3649,27 +3802,24 @@ export default function App() {
                 <span className="block text-xs font-bold text-black/90 uppercase tracking-wider">Medicamentos Prescritos</span>
                 
                 {/* Current prescription line items list */}
-                <div className="bg-brand-linen/30 rounded-xl p-3 border border-brand-border space-y-2 max-h-44 overflow-y-auto">
+                <div className="bg-brand-linen/30 rounded-xl p-3 border border-brand-border space-y-2 max-h-48 overflow-y-auto">
                   {prescriptionForm.medications.length === 0 ? (
                     <p className="text-xs text-slate-400 text-center py-4">No has agregado medicamentos. Completa los campos en el constructor abajo para agregar el primero.</p>
                   ) : (
                     prescriptionForm.medications.map((med, index) => (
                       <div key={index} className="flex items-start justify-between bg-white p-3 rounded-xl border border-brand-border gap-3 shadow-2xs">
-                        <div className="text-xs space-y-1 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <strong className="text-brand-charcoal text-[13px]">{med.commercialName || med.genericName || med.name}</strong>
-                            {med.commercialName && med.genericName && (
-                              <span className="text-slate-500 font-normal text-[11px]">({med.genericName})</span>
-                            )}
-                            {[med.concentration, med.pharmaceuticalForm, med.quantity ? `Cant: ${med.quantity}` : ''].filter(Boolean).map((tag, tIdx) => (
-                              <span key={tIdx} className="px-1.5 py-0.5 bg-[#fbf5f4] text-[#b57367] text-[10px] font-bold rounded-md border border-[#ead5d0]/50">
-                                {tag}
-                              </span>
-                            ))}
+                        <div className="text-xs space-y-1.5 flex-1 text-left">
+                          <div className="font-bold text-slate-900 text-[13px] leading-snug">
+                            {formatMedicationLine1(med, index)}
                           </div>
-                          <p className="text-slate-700 text-[11.5px] italic leading-tight">
-                            "{med.fullIndication || med.notes || [med.dose, med.frequency, med.duration].filter(Boolean).join(' • ')}"
-                          </p>
+                          <div className="text-slate-700 text-[12px] pl-3 leading-relaxed">
+                            {formatMedicationLine2(med)}
+                          </div>
+                          {med.notes && med.notes !== med.fullIndication && med.notes !== formatMedicationLine2(med) && med.notes.trim() !== "" && (
+                            <div className="text-[11px] text-[#b57367] italic pl-3">
+                              Nota: {med.notes}
+                            </div>
+                          )}
                         </div>
                         <button 
                           type="button"
@@ -3889,26 +4039,26 @@ export default function App() {
 
                   {/* 3. VISTA PREVIA EN TIEMPO REAL */}
                   {(() => {
-                    const preview = formatStructuredIndication({
-                      baseInstruction: medForm.baseInstruction,
-                      route: medForm.route,
-                      frequency: medForm.frequency,
-                      applicationSite: medForm.applicationSite,
-                      treatmentPeriod: medForm.treatmentPeriod
-                    });
+                    const line1Preview = formatMedicationLine1(medForm, prescriptionForm.medications.length);
+                    const line2Preview = formatMedicationLine2(medForm);
 
                     return (
-                      <div className="bg-[#fbf5f4] border border-[#ead5d0] rounded-xl p-3 space-y-1">
+                      <div className="bg-[#fbf5f4] border border-[#ead5d0] rounded-xl p-3.5 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold text-[#b57367] uppercase tracking-wider flex items-center gap-1.5">
                             <Sparkles className="h-3.5 w-3.5" />
-                            Vista Previa de la Posología en Receta
+                            Vista Previa en Hoja de Receta
                           </span>
-                          <span className="text-[10px] text-slate-400 font-medium">Generación automática</span>
+                          <span className="text-[10px] text-slate-400 font-medium">Formato oficial</span>
                         </div>
-                        <p className="text-xs text-slate-800 font-medium italic bg-white p-2.5 rounded-lg border border-[#ead5d0]/70 leading-relaxed shadow-2xs">
-                          "{preview || 'Complete las indicaciones arriba para ver la vista previa en tiempo real...'}"
-                        </p>
+                        <div className="bg-white p-3 rounded-xl border border-[#ead5d0]/70 space-y-1.5 shadow-2xs text-left">
+                          <div className="font-bold text-slate-900 text-xs sm:text-[13.5px]">
+                            {line1Preview || (prescriptionForm.medications.length + 1) + ". [Nombre del medicamento]"}
+                          </div>
+                          <div className="text-slate-700 text-xs sm:text-[12.5px] pl-3 leading-relaxed">
+                            {line2Preview || "Complete las indicaciones arriba para ver la posología estructurada..."}
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
