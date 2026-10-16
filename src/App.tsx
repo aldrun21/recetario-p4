@@ -1873,32 +1873,23 @@ export default function App() {
     window.print();
   };
 
-  // Direct High-Resolution PDF Download
+  // Direct High-Resolution PDF Download (Exact A4 single-page layout with footer at bottom)
   const handleDownloadPdf = async () => {
     if (!printAreaRef.current || !selectedPrescription) return;
     setIsDownloadingPdf(true);
     try {
       const element = printAreaRef.current;
 
-      // Exact A4 dimensions: 210mm x 297mm
-      // Standard 150 PPI pixel resolution for A4:
-      // Width  = (210 mm / 25.4) * 150 = 1240.15 px -> 1240 px
-      // Height = (297 mm / 25.4) * 150 = 1753.94 px -> 1754 px
-      const TARGET_WIDTH = 1240;
-      const TARGET_HEIGHT = 1754;
-
-      // Base desktop reference width: 800px
-      // Height to maintain exact A4 ratio: 800 * (1754 / 1240) = 1131.6px (~1132px)
-      // Scale factor: 1240 / 800 = 1.55x -> produces exactly 1240x1754 at 150 PPI
       const BASE_WIDTH = 800;
-      const BASE_HEIGHT = 1132;
-      const SCALE_FACTOR = TARGET_WIDTH / BASE_WIDTH; // 1.55
+      const BASE_HEIGHT = 1131; // Exact A4 portrait proportion (800 * 297/210)
+      const TARGET_WIDTH = 2480;
+      const TARGET_HEIGHT = 3508; // Exact A4 height at 300 PPI
+      const SCALE_FACTOR = TARGET_WIDTH / BASE_WIDTH;
 
       let imgData = '';
       try {
-        // Method 1: html-to-image (Uses native SVG foreignObject, preserves all Tailwind CSS in production without stylesheet CORS issues)
         imgData = await toJpeg(element, {
-          quality: 0.96,
+          quality: 0.98,
           backgroundColor: '#ffffff',
           canvasWidth: TARGET_WIDTH,
           canvasHeight: TARGET_HEIGHT,
@@ -1910,7 +1901,6 @@ export default function App() {
             maxWidth: `${BASE_WIDTH}px`,
             height: `${BASE_HEIGHT}px`,
             minHeight: `${BASE_HEIGHT}px`,
-            maxHeight: `${BASE_HEIGHT}px`,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
@@ -1923,7 +1913,7 @@ export default function App() {
           }
         });
       } catch (h2iErr) {
-        console.warn('html-to-image failed, falling back to html2canvas-pro with stylesheet injection:', h2iErr);
+        console.warn('html-to-image failed, falling back to html2canvas-pro:', h2iErr);
         const canvas = await html2canvas(element, {
           scale: SCALE_FACTOR,
           useCORS: true,
@@ -1932,21 +1922,6 @@ export default function App() {
           backgroundColor: '#ffffff',
           windowWidth: 1024,
           onclone: (clonedDoc) => {
-            // Copy CSS rules directly into an inline <style> tag so clonedDoc doesnt fail fetching external CSS
-            try {
-              const styleEl = clonedDoc.createElement('style');
-              let allCss = '';
-              Array.from(document.styleSheets).forEach(sheet => {
-                try {
-                  Array.from(sheet.cssRules || []).forEach(rule => {
-                    allCss += rule.cssText + '\n';
-                  });
-                } catch (e) {}
-              });
-              styleEl.textContent = allCss;
-              clonedDoc.head.appendChild(styleEl);
-            } catch (e) {}
-
             const clonedElement = clonedDoc.getElementById('printable-prescription');
             if (clonedElement) {
               clonedElement.style.width = `${BASE_WIDTH}px`;
@@ -1954,7 +1929,6 @@ export default function App() {
               clonedElement.style.maxWidth = `${BASE_WIDTH}px`;
               clonedElement.style.height = `${BASE_HEIGHT}px`;
               clonedElement.style.minHeight = `${BASE_HEIGHT}px`;
-              clonedElement.style.maxHeight = `${BASE_HEIGHT}px`;
               clonedElement.style.display = 'flex';
               clonedElement.style.flexDirection = 'column';
               clonedElement.style.justifyContent = 'space-between';
@@ -1964,29 +1938,26 @@ export default function App() {
               clonedElement.style.borderRadius = '0';
               clonedElement.style.backgroundColor = '#ffffff';
 
-              // Ensure bottom segment sits at the absolute bottom
               const bottomSegment = clonedElement.querySelector('.mt-auto') || clonedElement.lastElementChild;
               if (bottomSegment instanceof HTMLElement) {
                 bottomSegment.style.marginTop = 'auto';
               }
 
-              // Make the social footer banner sit flush against the bottom edge of the A4 page
               const footerBanner = clonedElement.querySelector('.bg-\\[\\#cc8576\\]') as HTMLElement | null;
               if (footerBanner) {
                 footerBanner.style.marginLeft = '-44px';
                 footerBanner.style.marginRight = '-44px';
                 footerBanner.style.marginBottom = '0px';
                 footerBanner.style.borderRadius = '0px';
-                footerBanner.style.paddingTop = '10px';
-                footerBanner.style.paddingBottom = '10px';
+                footerBanner.style.paddingTop = '12px';
+                footerBanner.style.paddingBottom = '12px';
               }
             }
           }
         });
-        imgData = canvas.toDataURL('image/jpeg', 0.96);
+        imgData = canvas.toDataURL('image/jpeg', 0.98);
       }
 
-      // Create PDF in A4 format (210mm x 297mm)
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -1994,8 +1965,10 @@ export default function App() {
         compress: true
       });
 
-      // Render full bleed across the A4 sheet: width 210mm, height 297mm
-      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
 
       const patientSlug = (selectedPrescription.patientName || 'Paciente')
         .trim()
@@ -2004,11 +1977,9 @@ export default function App() {
       const dateSlug = (selectedPrescription.createdAt || new Date().toISOString()).split('T')[0];
       const filename = `Receta_${patientSlug}_${dateSlug}.pdf`;
 
-      // Dual-strategy download for desktop & mobile browsers
       try {
         pdf.save(filename);
       } catch (saveErr) {
-        console.warn('pdf.save failed, using direct anchor fallback:', saveErr);
         const blob = pdf.output('blob');
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -2776,6 +2747,7 @@ export default function App() {
                           )}
                           <span>{isDownloadingPdf ? 'Generando PDF...' : 'Descargar PDF'}</span>
                         </button>
+
                         <button 
                           onClick={handlePrint}
                           className="px-3.5 py-2 sm:px-4 sm:py-2 bg-brand-charcoal hover:opacity-90 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 sm:gap-2 transition cursor-pointer shadow-sm"
