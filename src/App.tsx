@@ -35,7 +35,7 @@ import {
   Download
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
-import { toJpeg } from 'html-to-image';
+import { toJpeg, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { 
   checkKvHealth, 
@@ -1873,103 +1873,322 @@ export default function App() {
     window.print();
   };
 
-  // Direct High-Resolution PDF Download (Exact A4 single-page layout with footer at bottom)
+  // Direct Native Text & Vector PDF Download using jsPDF primitives + crisp icon/logo rendering
   const handleDownloadPdf = async () => {
-    if (!printAreaRef.current || !selectedPrescription) return;
+    if (!selectedPrescription) return;
     setIsDownloadingPdf(true);
     try {
-      const element = printAreaRef.current;
+      let logoDataUrl = '';
 
-      const BASE_WIDTH = 800;
-      const BASE_HEIGHT = 1131; // Exact A4 portrait proportion (800 * 297/210)
-      const TARGET_WIDTH = 2480;
-      const TARGET_HEIGHT = 3508; // Exact A4 height at 300 PPI
-      const SCALE_FACTOR = TARGET_WIDTH / BASE_WIDTH;
+      // Exact vector SVG strings provided by user for Location, WhatsApp, and social icons in PDF
+      const ubiSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.9 19"><path fill="#DC968B" d="M14.9,7c0,1.3-0.3,2.5-0.9,3.6c-0.9,1.8-2,3.6-3.3,5.2c-0.7,0.8-1.3,1.7-2,2.5C8.5,18.7,8,18.9,7.5,19 c-0.3,0-0.6-0.1-0.9-0.3c-0.5-0.4-1-0.9-1.4-1.5c-1.4-1.7-2.7-3.4-3.8-5.3C1,11.2,0.6,10.3,0.3,9.4C0,8.6-0.1,7.7,0,6.9 C0.1,5,1,3.2,2.4,1.9C3.6,0.8,5.1,0.2,6.7,0c3.6-0.4,6.9,1.9,7.9,5.4c0.1,0.2,0.1,0.5,0.1,0.7C14.8,6.5,14.9,6.8,14.9,7z M7.4,4.1 c-1.9,0-3.4,1.5-3.4,3.4s1.5,3.4,3.4,3.4c1.9,0,3.4-1.5,3.4-3.4C10.8,5.6,9.3,4.1,7.4,4.1C7.5,4.1,7.5,4.1,7.4,4.1z"/></svg>`;
+      const waSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16.7 16.7"><path fill="#DC968B" d="M7.7,0H9c0.3,0,0.5,0.1,0.8,0.1c1.5,0.2,2.9,0.9,4,1.9c1.4,1.2,2.4,2.9,2.7,4.8c0,0.3,0.1,0.6,0.1,0.9v1.2 c0,0.3-0.1,0.6-0.1,0.9c-0.3,2-1.4,3.8-3,5c-1.8,1.5-4,2.1-6.3,1.8c-1.2-0.2-2.3-0.6-3.4-1.2c-0.1-0.1-0.2-0.1-0.3,0l-2.5,0.8 l-0.6,0.2c0.3-1,0.7-2,1-2.9c0.1-0.1,0.1-0.2,0-0.3C0.2,11.3-0.3,9,0.2,6.8C0.5,5,1.4,3.4,2.7,2.2c1.2-1.1,2.6-1.8,4.2-2L7.7,0z M3.5,6.1c0,0.4,0.1,0.8,0.2,1.2C4,7.9,4.4,8.6,4.8,9.1c1.2,1.8,3,3.1,5.1,3.7c0.6,0.2,1.2,0.3,1.7,0.1c1-0.1,1.8-1.1,1.7-2.1 c0-0.1-0.1-0.3-0.2-0.3l-1.9-0.9c-0.2-0.1-0.5-0.1-0.6,0.1c0,0,0,0,0,0.1c-0.2,0.2-0.4,0.5-0.5,0.7c-0.2,0.3-0.5,0.3-0.7,0.2 c0,0,0,0,0,0c-1.4-0.6-2.5-1.6-3.2-2.8c-0.1-0.1-0.1-0.4,0-0.5l0.6-0.7C6.8,6.5,6.9,6.2,6.8,6C6.5,5.5,6.3,4.9,6.1,4.3 S5.8,3.8,5.3,3.8c-0.4,0-0.7,0.1-1,0.4C3.8,4.7,3.5,5.4,3.5,6.1z"/></svg>`;
+      const tiktokSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.81 15.11"><path fill="#ffffff" d="M7.91,0H7.7a7.56,7.56,0,0,0-.19,15.11h.2A7.56,7.56,0,0,0,7.91,0ZM7.52,14.61A7.06,7.06,0,0,1,7.7.5h.19a7.06,7.06,0,0,1,4.67,12.18A6.94,6.94,0,0,1,7.52,14.61Z"/><path fill="#ffffff" d="M9.39,3.36H8V3.5L7.87,9.06a1.5,1.5,0,0,1,0,.3,1.28,1.28,0,0,1-2.52-.08,1.25,1.25,0,0,1,.94-1.35,4.45,4.45,0,0,1,.73,0V6.55a6.32,6.32,0,0,0-.87,0,2.62,2.62,0,0,0-2.22,3v0A2.66,2.66,0,0,0,7,11.71l.17,0a2.58,2.58,0,0,0,2-2.35c.05-1,.06-2,.08-3v-.2a3.47,3.47,0,0,0,2.12.78V5.54a2.11,2.11,0,0,1-1.48-.67A2.19,2.19,0,0,1,9.39,3.36Z"/></svg>`;
+      const fbSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ffffff" d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/></svg>`;
+      const igSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" ry="5" fill="none" stroke="#ffffff" stroke-width="2.5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" fill="none" stroke="#ffffff" stroke-width="2.5"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/></svg>`;
 
-      let imgData = '';
-      try {
-        imgData = await toJpeg(element, {
-          quality: 0.98,
-          backgroundColor: '#ffffff',
-          canvasWidth: TARGET_WIDTH,
-          canvasHeight: TARGET_HEIGHT,
-          pixelRatio: 1,
-          skipFonts: true,
-          style: {
-            width: `${BASE_WIDTH}px`,
-            minWidth: `${BASE_WIDTH}px`,
-            maxWidth: `${BASE_WIDTH}px`,
-            height: `${BASE_HEIGHT}px`,
-            minHeight: `${BASE_HEIGHT}px`,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            padding: '36px 44px 0px 44px',
-            margin: '0',
-            borderRadius: '0px',
-            border: 'none',
-            boxShadow: 'none',
-            backgroundColor: '#ffffff'
-          }
+      const svgToPng = (svgStr: string): Promise<string> => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = (img.naturalWidth || 100) * 3;
+            canvas.height = (img.naturalHeight || 100) * 3;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              resolve(canvas.toDataURL('image/png'));
+            } else {
+              resolve('');
+            }
+          };
+          img.onerror = () => resolve('');
+          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
         });
-      } catch (h2iErr) {
-        console.warn('html-to-image failed, falling back to html2canvas-pro:', h2iErr);
-        const canvas = await html2canvas(element, {
-          scale: SCALE_FACTOR,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          windowWidth: 1024,
-          onclone: (clonedDoc) => {
-            const clonedElement = clonedDoc.getElementById('printable-prescription');
-            if (clonedElement) {
-              clonedElement.style.width = `${BASE_WIDTH}px`;
-              clonedElement.style.minWidth = `${BASE_WIDTH}px`;
-              clonedElement.style.maxWidth = `${BASE_WIDTH}px`;
-              clonedElement.style.height = `${BASE_HEIGHT}px`;
-              clonedElement.style.minHeight = `${BASE_HEIGHT}px`;
-              clonedElement.style.display = 'flex';
-              clonedElement.style.flexDirection = 'column';
-              clonedElement.style.justifyContent = 'space-between';
-              clonedElement.style.padding = '36px 44px 0px 44px';
-              clonedElement.style.boxShadow = 'none';
-              clonedElement.style.border = 'none';
-              clonedElement.style.borderRadius = '0';
-              clonedElement.style.backgroundColor = '#ffffff';
+      };
 
-              const bottomSegment = clonedElement.querySelector('.mt-auto') || clonedElement.lastElementChild;
-              if (bottomSegment instanceof HTMLElement) {
-                bottomSegment.style.marginTop = 'auto';
-              }
+      const ubiIconDataUrl = await svgToPng(ubiSvgString);
+      const waIconDataUrl = await svgToPng(waSvgString);
+      const tiktokIconDataUrl = await svgToPng(tiktokSvgString);
+      const fbIconDataUrl = await svgToPng(fbSvgString);
+      const igIconDataUrl = await svgToPng(igSvgString);
 
-              const footerBanner = clonedElement.querySelector('.bg-\\[\\#cc8576\\]') as HTMLElement | null;
-              if (footerBanner) {
-                footerBanner.style.marginLeft = '-44px';
-                footerBanner.style.marginRight = '-44px';
-                footerBanner.style.marginBottom = '0px';
-                footerBanner.style.borderRadius = '0px';
-                footerBanner.style.paddingTop = '12px';
-                footerBanner.style.paddingBottom = '12px';
-              }
+      if (printAreaRef.current) {
+        try {
+          const logoEl = printAreaRef.current.querySelector('svg#main-logo-svg');
+          if (logoEl) {
+            const generated = await toPng(logoEl as HTMLElement, { quality: 1.0, pixelRatio: 3 });
+            if (generated && generated.startsWith('data:image/')) {
+              logoDataUrl = generated;
             }
           }
-        });
-        imgData = canvas.toDataURL('image/jpeg', 0.98);
+        } catch (iconErr) {
+          console.warn('Could not capture logo:', iconErr);
+        }
       }
 
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4',
-        compress: true
       });
 
-      const pdfWidth = 210;
-      const pdfHeight = 297;
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 15;
+      const contentWidth = pageWidth - margin * 2; // 180 mm
+      let currentY = margin;
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+      // 1. White Background
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
 
+      // 2. Header Clinic & Contact
+      if (logoDataUrl) {
+        pdf.addImage(logoDataUrl, 'PNG', margin, currentY - 1, 38, 14.5);
+      } else {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.setTextColor(68, 69, 72);
+        pdf.text('2KarolT', margin, currentY + 6);
+      }
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.setTextColor(30, 41, 59); // slate-800
+      pdf.text(selectedPrescription.clinicName || 'Centro Médico Niño Jesús', pageWidth - margin, currentY + 4, { align: 'right' });
+
+      currentY += 8;
+      pdf.setFontSize(9);
+      const addr = doctorProfile?.address || 'Av. Cañoto Nº 580, Rafael Peña. Piso 5, consultorio 512.';
+      const parts = addr.split(',');
+      if (parts.length >= 2) {
+        const part1 = parts[0] + ',';
+        const part2 = parts.slice(1).join(',').trim();
+        pdf.text(part1, pageWidth - margin - 7, currentY, { align: 'right' });
+        pdf.text(part2, pageWidth - margin - 7, currentY + 4, { align: 'right' });
+        currentY += 4;
+      } else {
+        pdf.text(addr, pageWidth - margin - 7, currentY, { align: 'right' });
+      }
+      if (ubiIconDataUrl) {
+        pdf.addImage(ubiIconDataUrl, 'PNG', pageWidth - margin - 4.5, currentY - 5.5, 4, 5.1);
+      }
+
+      currentY += 8;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(30, 41, 59);
+      const phoneText = doctorProfile?.phone || '73887070';
+      pdf.text(phoneText, pageWidth - margin - 7, currentY, { align: 'right' });
+      if (waIconDataUrl) {
+        pdf.addImage(waIconDataUrl, 'PNG', pageWidth - margin - 4.5, currentY - 3.8, 4.2, 4.2);
+      }
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text(`Cédula Profesional: ${selectedPrescription.doctorLicense || '10293847'}`, margin, currentY);
+
+      currentY += 5;
+      // Divider line
+      pdf.setDrawColor(234, 230, 225);
+      pdf.setLineWidth(0.3);
+      pdf.line(margin, currentY, pageWidth - margin, currentY);
+
+      currentY += 8;
+
+      // 3. Patient Metadata Box
+      pdf.setFillColor(251, 250, 248); // #fbfaf8
+      pdf.setDrawColor(234, 230, 225);
+      pdf.roundedRect(margin, currentY, contentWidth, 22, 2, 2, 'FD');
+
+      const colWidth = contentWidth / 3;
+      // Patient Name
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('PACIENTE', margin + 5, currentY + 6);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text(selectedPrescription.patientName || '', margin + 5, currentY + 14);
+
+      // Date
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('FECHA DE EMISIÓN', margin + colWidth + 5, currentY + 6);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(30, 41, 59);
+      const dateStr = new Date(selectedPrescription.createdAt).toLocaleDateString() + ' ' + new Date(selectedPrescription.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      pdf.text(dateStr, margin + colWidth + 5, currentY + 14);
+
+      // Diagnosis
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('DIAGNÓSTICO', margin + colWidth * 2 + 5, currentY + 6);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(30, 41, 59);
+      const diagLines = pdf.splitTextToSize(selectedPrescription.diagnosis || '', colWidth - 10);
+      pdf.text(diagLines[0] || '', margin + colWidth * 2 + 5, currentY + 14);
+
+      currentY += 28;
+
+      // 4. Prescriptions / Medications Section
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text('Prescripción de Medicamentos', margin, currentY);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(181, 115, 103);
+      pdf.text('TRATAMIENTO E INDICACIONES', pageWidth - margin, currentY, { align: 'right' });
+
+      currentY += 4;
+      pdf.setDrawColor(234, 230, 225);
+      pdf.line(margin, currentY, pageWidth - margin, currentY);
+
+      currentY += 8;
+
+      try {
+        const items: MedicationItem[] = JSON.parse(selectedPrescription.medications);
+        if (items && items.length > 0) {
+          items.forEach((med, idx) => {
+            const line1 = formatMedicationLine1(med, idx);
+            const line2 = formatMedicationLine2(med);
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(10);
+            pdf.setTextColor(15, 23, 42);
+            const wrappedLine1 = pdf.splitTextToSize(line1, contentWidth);
+            pdf.text(wrappedLine1, margin, currentY);
+            currentY += (wrappedLine1.length || 1) * 5;
+
+            if (line2) {
+              pdf.setFont('helvetica', 'normal');
+              pdf.setFontSize(9);
+              pdf.setTextColor(51, 65, 85);
+              const wrappedLine2 = pdf.splitTextToSize(line2, contentWidth - 6);
+              pdf.text(wrappedLine2, margin + 5, currentY);
+              currentY += (wrappedLine2.length || 1) * 4.5;
+            }
+
+            if (med.notes && med.notes !== med.fullIndication && med.notes !== line2 && med.notes.trim() !== "") {
+              pdf.setFont('helvetica', 'italic');
+              pdf.setFontSize(8);
+              pdf.setTextColor(181, 115, 103);
+              const wrappedNote = pdf.splitTextToSize(`Nota: ${med.notes}`, contentWidth - 6);
+              pdf.text(wrappedNote, margin + 5, currentY);
+              currentY += (wrappedNote.length || 1) * 4;
+            }
+
+            currentY += 4;
+          });
+        }
+      } catch (e) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(9);
+        pdf.setTextColor(239, 68, 68);
+        pdf.text('Error al cargar tratamiento', margin, currentY);
+        currentY += 8;
+      }
+
+      // General Instructions if any
+      if (selectedPrescription.instructions) {
+        currentY += 4;
+        pdf.setFillColor(251, 250, 248);
+        pdf.setDrawColor(234, 230, 225);
+        pdf.roundedRect(margin, currentY, contentWidth, 18, 2, 2, 'FD');
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8);
+        pdf.setTextColor(181, 115, 103);
+        pdf.text('INDICACIONES GENERALES Y CUIDADOS', margin + 4, currentY + 5);
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(71, 85, 105);
+        const instLines = pdf.splitTextToSize(selectedPrescription.instructions, contentWidth - 8);
+        pdf.text(instLines, margin + 4, currentY + 11);
+        currentY += 20;
+      }
+
+      // 5. Bottom Section: Signature & Footer Banner
+      const sigY = 242;
+      pdf.setDrawColor(203, 213, 225);
+      pdf.setLineWidth(0.4);
+      pdf.line(pageWidth / 2 - 35, sigY, pageWidth / 2 + 35, sigY);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(30, 41, 59);
+      const docCleanName = `Dra. ${selectedPrescription.doctorName.replace(/dra\./gi, '').replace(/dr\./gi, '').trim()}`;
+      pdf.text(docCleanName, pageWidth / 2, sigY + 5, { align: 'center' });
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text(`Especialista en ${doctorProfile?.specialty || 'Dermatología'}`, pageWidth / 2, sigY + 9, { align: 'center' });
+
+      // Footer Banner Background (Vector Rectangle at bottom of page)
+      const bannerHeight = 16;
+      const bannerY = pageHeight - bannerHeight;
+      pdf.setFillColor(204, 133, 118); // #cc8576
+      pdf.rect(0, bannerY, pageWidth, bannerHeight, 'F');
+
+      // Footer text items (TikTok, Facebook, Instagram) with icons
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(255, 255, 255);
+      
+      const tiktokText = doctorProfile?.tiktok || '@dra.karoltalavera';
+      const fbText = doctorProfile?.facebook || 'Dra. Karol Talavera - Dermatóloga';
+      const igText = doctorProfile?.instagram || '@dra.karoltalavera';
+
+      const x1 = 35;
+      const x2 = 105;
+      const x3 = 175;
+      const iconSize = 4.2;
+      const yIcon = bannerY + (bannerHeight - iconSize) / 2;
+      const yText = bannerY + bannerHeight / 2 + 1.2;
+
+      // TikTok
+      const tW1 = pdf.getTextWidth(tiktokText);
+      const totalW1 = iconSize + 2 + tW1;
+      let startX1 = x1 - totalW1 / 2;
+      if (tiktokIconDataUrl) {
+        pdf.addImage(tiktokIconDataUrl, 'PNG', startX1, yIcon, iconSize, iconSize);
+        startX1 += iconSize + 2;
+      }
+      pdf.text(tiktokText, startX1, yText);
+
+      // Facebook
+      const tW2 = pdf.getTextWidth(fbText);
+      const totalW2 = iconSize + 2 + tW2;
+      let startX2 = x2 - totalW2 / 2;
+      if (fbIconDataUrl) {
+        pdf.addImage(fbIconDataUrl, 'PNG', startX2, yIcon, iconSize, iconSize);
+        startX2 += iconSize + 2;
+      }
+      pdf.text(fbText, startX2, yText);
+
+      // Instagram
+      const tW3 = pdf.getTextWidth(igText);
+      const totalW3 = iconSize + 2 + tW3;
+      let startX3 = x3 - totalW3 / 2;
+      if (igIconDataUrl) {
+        pdf.addImage(igIconDataUrl, 'PNG', startX3, yIcon, iconSize, iconSize);
+        startX3 += iconSize + 2;
+      }
+      pdf.text(igText, startX3, yText);
+
+      // Save PDF
       const patientSlug = (selectedPrescription.patientName || 'Paciente')
         .trim()
         .replace(/\s+/g, '_')
@@ -1994,7 +2213,7 @@ export default function App() {
         }, 4000);
       }
     } catch (error: any) {
-      console.error('Error generating PDF:', error);
+      console.error('Error generating vector PDF:', error);
       window.print();
     } finally {
       setIsDownloadingPdf(false);
@@ -2800,7 +3019,7 @@ export default function App() {
                             }}>
                             {/* Left Logo Side */}
                             <div className="flex items-start">
-                              <svg id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 133.06 50.19" className="h-16 md:h-20 w-auto shrink-0 select-none">
+                              <svg id="main-logo-svg" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 133.06 50.19" className="h-16 md:h-20 w-auto shrink-0 select-none">
                                 <defs>
                                   <style>{`
                                     .cls-1{fill:#444548;}
@@ -3024,7 +3243,7 @@ export default function App() {
                             }}>
                             {/* TikTok */}
                             <div className="flex items-center gap-1.5">
-                              <svg id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.81 15.11" className="h-4 w-4 shrink-0 fill-white">
+                              <svg data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.81 15.11" className="h-4 w-4 shrink-0 fill-white">
                                 <title>tiktokiconos</title>
                                 <g id="Capa_2" data-name="Capa 2">
                                   <g id="Capa_1-2" data-name="Capa 1-2">
