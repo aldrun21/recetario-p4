@@ -35,6 +35,7 @@ import {
   Download
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
+import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { 
   checkKvHealth, 
@@ -1893,51 +1894,97 @@ export default function App() {
       const BASE_HEIGHT = 1132;
       const SCALE_FACTOR = TARGET_WIDTH / BASE_WIDTH; // 1.55
 
-      const canvas = await html2canvas(element, {
-        scale: SCALE_FACTOR,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 1024,
-        onclone: (clonedDoc) => {
-          const clonedElement = clonedDoc.getElementById('printable-prescription');
-          if (clonedElement) {
-            clonedElement.style.width = `${BASE_WIDTH}px`;
-            clonedElement.style.minWidth = `${BASE_WIDTH}px`;
-            clonedElement.style.maxWidth = `${BASE_WIDTH}px`;
-            clonedElement.style.height = `${BASE_HEIGHT}px`;
-            clonedElement.style.minHeight = `${BASE_HEIGHT}px`;
-            clonedElement.style.maxHeight = `${BASE_HEIGHT}px`;
-            clonedElement.style.display = 'flex';
-            clonedElement.style.flexDirection = 'column';
-            clonedElement.style.justifyContent = 'space-between';
-            clonedElement.style.padding = '36px 44px 0px 44px';
-            clonedElement.style.boxShadow = 'none';
-            clonedElement.style.border = 'none';
-            clonedElement.style.borderRadius = '0';
-            clonedElement.style.backgroundColor = '#ffffff';
+      let imgData = '';
+      try {
+        // Method 1: html-to-image (Uses native SVG foreignObject, preserves all Tailwind CSS in production without stylesheet CORS issues)
+        imgData = await toJpeg(element, {
+          quality: 0.96,
+          backgroundColor: '#ffffff',
+          canvasWidth: TARGET_WIDTH,
+          canvasHeight: TARGET_HEIGHT,
+          pixelRatio: 1,
+          skipFonts: true,
+          style: {
+            width: `${BASE_WIDTH}px`,
+            minWidth: `${BASE_WIDTH}px`,
+            maxWidth: `${BASE_WIDTH}px`,
+            height: `${BASE_HEIGHT}px`,
+            minHeight: `${BASE_HEIGHT}px`,
+            maxHeight: `${BASE_HEIGHT}px`,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            padding: '36px 44px 0px 44px',
+            margin: '0',
+            borderRadius: '0px',
+            border: 'none',
+            boxShadow: 'none',
+            backgroundColor: '#ffffff'
+          }
+        });
+      } catch (h2iErr) {
+        console.warn('html-to-image failed, falling back to html2canvas-pro with stylesheet injection:', h2iErr);
+        const canvas = await html2canvas(element, {
+          scale: SCALE_FACTOR,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: 1024,
+          onclone: (clonedDoc) => {
+            // Copy CSS rules directly into an inline <style> tag so clonedDoc doesnt fail fetching external CSS
+            try {
+              const styleEl = clonedDoc.createElement('style');
+              let allCss = '';
+              Array.from(document.styleSheets).forEach(sheet => {
+                try {
+                  Array.from(sheet.cssRules || []).forEach(rule => {
+                    allCss += rule.cssText + '\n';
+                  });
+                } catch (e) {}
+              });
+              styleEl.textContent = allCss;
+              clonedDoc.head.appendChild(styleEl);
+            } catch (e) {}
 
-            // Ensure bottom segment sits at the absolute bottom
-            const bottomSegment = clonedElement.querySelector('.mt-auto') || clonedElement.lastElementChild;
-            if (bottomSegment instanceof HTMLElement) {
-              bottomSegment.style.marginTop = 'auto';
-            }
+            const clonedElement = clonedDoc.getElementById('printable-prescription');
+            if (clonedElement) {
+              clonedElement.style.width = `${BASE_WIDTH}px`;
+              clonedElement.style.minWidth = `${BASE_WIDTH}px`;
+              clonedElement.style.maxWidth = `${BASE_WIDTH}px`;
+              clonedElement.style.height = `${BASE_HEIGHT}px`;
+              clonedElement.style.minHeight = `${BASE_HEIGHT}px`;
+              clonedElement.style.maxHeight = `${BASE_HEIGHT}px`;
+              clonedElement.style.display = 'flex';
+              clonedElement.style.flexDirection = 'column';
+              clonedElement.style.justifyContent = 'space-between';
+              clonedElement.style.padding = '36px 44px 0px 44px';
+              clonedElement.style.boxShadow = 'none';
+              clonedElement.style.border = 'none';
+              clonedElement.style.borderRadius = '0';
+              clonedElement.style.backgroundColor = '#ffffff';
 
-            // Make the social footer banner sit flush against the bottom edge of the A4 page
-            const footerBanner = clonedElement.querySelector('.bg-\\[\\#cc8576\\]') as HTMLElement | null;
-            if (footerBanner) {
-              footerBanner.style.marginLeft = '-44px';
-              footerBanner.style.marginRight = '-44px';
-              footerBanner.style.marginBottom = '0px';
-              footerBanner.style.borderRadius = '0px';
-              footerBanner.style.paddingTop = '10px';
-              footerBanner.style.paddingBottom = '10px';
+              // Ensure bottom segment sits at the absolute bottom
+              const bottomSegment = clonedElement.querySelector('.mt-auto') || clonedElement.lastElementChild;
+              if (bottomSegment instanceof HTMLElement) {
+                bottomSegment.style.marginTop = 'auto';
+              }
+
+              // Make the social footer banner sit flush against the bottom edge of the A4 page
+              const footerBanner = clonedElement.querySelector('.bg-\\[\\#cc8576\\]') as HTMLElement | null;
+              if (footerBanner) {
+                footerBanner.style.marginLeft = '-44px';
+                footerBanner.style.marginRight = '-44px';
+                footerBanner.style.marginBottom = '0px';
+                footerBanner.style.borderRadius = '0px';
+                footerBanner.style.paddingTop = '10px';
+                footerBanner.style.paddingBottom = '10px';
+              }
             }
           }
-        }
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.96);
+        });
+        imgData = canvas.toDataURL('image/jpeg', 0.96);
+      }
 
       // Create PDF in A4 format (210mm x 297mm)
       const pdf = new jsPDF({
@@ -2762,10 +2809,23 @@ export default function App() {
                         ref={printAreaRef}
                         className="bg-white rounded-2xl border border-brand-border shadow-lg p-6 sm:p-8 md:p-12 space-y-6 relative overflow-hidden flex flex-col justify-between select-none min-w-[620px] sm:min-w-0 mx-auto min-h-[750px] sm:min-h-[850px] md:min-h-[920px]"
                         id="printable-prescription"
+                        style={{
+                          fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+                          backgroundColor: "#ffffff",
+                          color: "#1e293b"
+                        }}
                       >
                         <div>
                           {/* Header medical card */}
-                          <div className="flex flex-row justify-between items-start pb-4 gap-4">
+                          <div className="flex flex-row justify-between items-start pb-4 gap-4"
+                            style={{
+                              display: "flex",
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                              paddingBottom: "16px",
+                              gap: "16px"
+                            }}>
                             {/* Left Logo Side */}
                             <div className="flex items-start">
                               <svg id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 133.06 50.19" className="h-16 md:h-20 w-auto shrink-0 select-none">
@@ -2822,7 +2882,14 @@ export default function App() {
                             </div>
 
                              {/* Right Contact Side */}
-                            <div className="text-right space-y-4 max-w-xs shrink-0 select-none">
+                            <div className="text-right space-y-4 max-w-xs shrink-0 select-none"
+                            style={{
+                              textAlign: "right",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "flex-end",
+                              gap: "12px"
+                            }}>
                               {/* Location block */}
                               <div className="flex items-start justify-end gap-2.5">
                                 <div className="flex flex-col items-end text-right leading-[1.35]">
@@ -2867,7 +2934,16 @@ export default function App() {
                           <div className="border-b border-[#eae6e1] my-4"></div>
 
                           {/* Patient metadata box */}
-                          <div className="bg-[#fbfaf8] border border-[#eae6e1] rounded-xl p-4 grid grid-cols-3 gap-4 text-xs text-slate-600">
+                          <div className="bg-[#fbfaf8] border border-[#eae6e1] rounded-xl p-4 grid grid-cols-3 gap-4 text-xs text-slate-600"
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                              backgroundColor: "#fbfaf8",
+                              border: "1px solid #eae6e1",
+                              borderRadius: "12px",
+                              padding: "16px",
+                              gap: "16px"
+                            }}>
                             <div>
                               <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">PACIENTES</span>
                               <span className="text-sm font-semibold text-brand-charcoal mt-1 block leading-tight">{selectedPrescription.patientName}</span>
@@ -2963,7 +3039,17 @@ export default function App() {
                           </div>
 
                           {/* Social Footer Banner bar */}
-                          <div className="bg-[#cc8576] text-white flex flex-row items-center justify-around py-2 px-4 rounded-xl text-[10px] -mx-6 -mb-6 sm:-mx-8 sm:-mb-8 md:-mx-12 md:-mb-12 print:-mx-0 print:-mb-0">
+                          <div className="bg-[#cc8576] text-white flex flex-row items-center justify-around py-2.5 px-4 rounded-xl text-[10px] -mx-6 -mb-6 sm:-mx-8 sm:-mb-8 md:-mx-12 md:-mb-12 print:-mx-0 print:-mb-0"
+                            style={{
+                              backgroundColor: "#cc8576",
+                              color: "#ffffff",
+                              display: "flex",
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-around",
+                              padding: "10px 16px",
+                              borderRadius: "12px"
+                            }}>
                             {/* TikTok */}
                             <div className="flex items-center gap-1.5">
                               <svg id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.81 15.11" className="h-4 w-4 shrink-0 fill-white">
