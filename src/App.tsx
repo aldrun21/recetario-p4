@@ -1004,6 +1004,59 @@ export default function App() {
   // Mode to remove/manage mini-options
   const [isChipsEditMode, setIsChipsEditMode] = useState(false);
 
+  // Catalog medication search in prescription modal
+  const [modalCatalogSearch, setModalCatalogSearch] = useState('');
+  const [isModalCatalogDropdownOpen, setIsModalCatalogDropdownOpen] = useState(false);
+  const modalCatalogSearchRef = useRef<HTMLDivElement>(null);
+
+  // Close modal catalog dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (modalCatalogSearchRef.current && !modalCatalogSearchRef.current.contains(event.target as Node)) {
+        setIsModalCatalogDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!isPrescriptionModalOpen) {
+      setModalCatalogSearch('');
+      setIsModalCatalogDropdownOpen(false);
+    }
+  }, [isPrescriptionModalOpen]);
+
+  const filteredModalCatalogMeds = useMemo(() => {
+    const q = modalCatalogSearch.trim().toLowerCase();
+    if (!q) {
+      return catalogMedications;
+    }
+    return catalogMedications.filter(m => {
+      const generic = (m.genericName || m.name || '').toLowerCase();
+      const commercial = (m.commercialName || '').toLowerCase();
+      return generic.includes(q) || commercial.includes(q);
+    });
+  }, [catalogMedications, modalCatalogSearch]);
+
+  function handleSelectModalCatalogMed(found: CatalogMedication) {
+    setMedForm({
+      genericName: found.genericName || found.name || '',
+      commercialName: found.commercialName || '',
+      concentration: found.concentration || found.dose || '',
+      pharmaceuticalForm: found.pharmaceuticalForm || 'Crema',
+      quantity: found.quantity || '1 tubo',
+      baseInstruction: found.baseInstruction || 'Capa fina sobre las lesiones',
+      route: found.route || 'Tópica',
+      frequency: found.frequency || '2 veces al día',
+      applicationSite: found.applicationSite || 'Lesiones de brazo',
+      treatmentPeriod: found.treatmentPeriod || found.duration || '3 semanas',
+      customNotes: found.customNotes || found.notes || ''
+    });
+    setModalCatalogSearch('');
+    setIsModalCatalogDropdownOpen(false);
+  }
+
   // New Catalog Medication Form state
   const [newCatalogMed, setNewCatalogMed] = useState({
     category: 'Fórmula Magistral',
@@ -1873,320 +1926,71 @@ export default function App() {
     window.print();
   };
 
-  // Direct Native Text & Vector PDF Download using jsPDF primitives + crisp icon/logo rendering
+  // Helper for wrapping text in SVG prescription items
+  function wrapSvgText(text: string, maxChars: number = 65): string[] {
+    if (!text) return [];
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      if ((currentLine + (currentLine ? ' ' : '') + word).length <= maxChars) {
+        currentLine += (currentLine ? ' ' : '') + word;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+
+  // Direct PDF Download formatted strictly for 21x28 cm sheet using the exact vector SVG template
   const handleDownloadPdf = async () => {
     if (!selectedPrescription) return;
     setIsDownloadingPdf(true);
     try {
-      let logoDataUrl = '';
-
-      // Exact vector SVG strings provided by user for Location, WhatsApp, and social icons in PDF
-      const ubiSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.9 19"><path fill="#DC968B" d="M14.9,7c0,1.3-0.3,2.5-0.9,3.6c-0.9,1.8-2,3.6-3.3,5.2c-0.7,0.8-1.3,1.7-2,2.5C8.5,18.7,8,18.9,7.5,19 c-0.3,0-0.6-0.1-0.9-0.3c-0.5-0.4-1-0.9-1.4-1.5c-1.4-1.7-2.7-3.4-3.8-5.3C1,11.2,0.6,10.3,0.3,9.4C0,8.6-0.1,7.7,0,6.9 C0.1,5,1,3.2,2.4,1.9C3.6,0.8,5.1,0.2,6.7,0c3.6-0.4,6.9,1.9,7.9,5.4c0.1,0.2,0.1,0.5,0.1,0.7C14.8,6.5,14.9,6.8,14.9,7z M7.4,4.1 c-1.9,0-3.4,1.5-3.4,3.4s1.5,3.4,3.4,3.4c1.9,0,3.4-1.5,3.4-3.4C10.8,5.6,9.3,4.1,7.4,4.1C7.5,4.1,7.5,4.1,7.4,4.1z"/></svg>`;
-      const waSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16.7 16.7"><path fill="#DC968B" d="M7.7,0H9c0.3,0,0.5,0.1,0.8,0.1c1.5,0.2,2.9,0.9,4,1.9c1.4,1.2,2.4,2.9,2.7,4.8c0,0.3,0.1,0.6,0.1,0.9v1.2 c0,0.3-0.1,0.6-0.1,0.9c-0.3,2-1.4,3.8-3,5c-1.8,1.5-4,2.1-6.3,1.8c-1.2-0.2-2.3-0.6-3.4-1.2c-0.1-0.1-0.2-0.1-0.3,0l-2.5,0.8 l-0.6,0.2c0.3-1,0.7-2,1-2.9c0.1-0.1,0.1-0.2,0-0.3C0.2,11.3-0.3,9,0.2,6.8C0.5,5,1.4,3.4,2.7,2.2c1.2-1.1,2.6-1.8,4.2-2L7.7,0z M3.5,6.1c0,0.4,0.1,0.8,0.2,1.2C4,7.9,4.4,8.6,4.8,9.1c1.2,1.8,3,3.1,5.1,3.7c0.6,0.2,1.2,0.3,1.7,0.1c1-0.1,1.8-1.1,1.7-2.1 c0-0.1-0.1-0.3-0.2-0.3l-1.9-0.9c-0.2-0.1-0.5-0.1-0.6,0.1c0,0,0,0,0,0.1c-0.2,0.2-0.4,0.5-0.5,0.7c-0.2,0.3-0.5,0.3-0.7,0.2 c0,0,0,0,0,0c-1.4-0.6-2.5-1.6-3.2-2.8c-0.1-0.1-0.1-0.4,0-0.5l0.6-0.7C6.8,6.5,6.9,6.2,6.8,6C6.5,5.5,6.3,4.9,6.1,4.3 S5.8,3.8,5.3,3.8c-0.4,0-0.7,0.1-1,0.4C3.8,4.7,3.5,5.4,3.5,6.1z"/></svg>`;
-      const tiktokSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.81 15.11"><path fill="#ffffff" d="M7.91,0H7.7a7.56,7.56,0,0,0-.19,15.11h.2A7.56,7.56,0,0,0,7.91,0ZM7.52,14.61A7.06,7.06,0,0,1,7.7.5h.19a7.06,7.06,0,0,1,4.67,12.18A6.94,6.94,0,0,1,7.52,14.61Z"/><path fill="#ffffff" d="M9.39,3.36H8V3.5L7.87,9.06a1.5,1.5,0,0,1,0,.3,1.28,1.28,0,0,1-2.52-.08,1.25,1.25,0,0,1,.94-1.35,4.45,4.45,0,0,1,.73,0V6.55a6.32,6.32,0,0,0-.87,0,2.62,2.62,0,0,0-2.22,3v0A2.66,2.66,0,0,0,7,11.71l.17,0a2.58,2.58,0,0,0,2-2.35c.05-1,.06-2,.08-3v-.2a3.47,3.47,0,0,0,2.12.78V5.54a2.11,2.11,0,0,1-1.48-.67A2.19,2.19,0,0,1,9.39,3.36Z"/></svg>`;
-      const fbSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ffffff" d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/></svg>`;
-      const igSvgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" ry="5" fill="none" stroke="#ffffff" stroke-width="2.5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" fill="none" stroke="#ffffff" stroke-width="2.5"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/></svg>`;
-
-      const svgToPng = (svgStr: string): Promise<string> => {
-        return new Promise((resolve) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = (img.naturalWidth || 100) * 3;
-            canvas.height = (img.naturalHeight || 100) * 3;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              resolve(canvas.toDataURL('image/png'));
-            } else {
-              resolve('');
-            }
-          };
-          img.onerror = () => resolve('');
-          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
-        });
-      };
-
-      const ubiIconDataUrl = await svgToPng(ubiSvgString);
-      const waIconDataUrl = await svgToPng(waSvgString);
-      const tiktokIconDataUrl = await svgToPng(tiktokSvgString);
-      const fbIconDataUrl = await svgToPng(fbSvgString);
-      const igIconDataUrl = await svgToPng(igSvgString);
-
-      if (printAreaRef.current) {
-        try {
-          const logoEl = printAreaRef.current.querySelector('svg#main-logo-svg');
-          if (logoEl) {
-            const generated = await toPng(logoEl as HTMLElement, { quality: 1.0, pixelRatio: 3 });
-            if (generated && generated.startsWith('data:image/')) {
-              logoDataUrl = generated;
-            }
-          }
-        } catch (iconErr) {
-          console.warn('Could not capture logo:', iconErr);
-        }
+      const svgEl = printAreaRef.current?.querySelector('svg#prescription-svg-doc');
+      if (!svgEl) {
+        throw new Error('No se encontró el elemento SVG de la receta');
       }
 
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
+      // Clone SVG to set explicit width/height in points for rasterization
+      const svgClone = svgEl.cloneNode(true) as SVGSVGElement;
+      svgClone.setAttribute('width', '595.28');
+      svgClone.setAttribute('height', '793.7');
+      const svgString = new XMLSerializer().serializeToString(svgClone);
+
+      // Convert SVG to ultra-high-resolution PNG (3x scaling: 1786 x 2381 px)
+      const pngDataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1786;
+          canvas.height = 2381;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas context no disponible'));
+            return;
+          }
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => reject(new Error('Error al rasterizar el SVG'));
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
       });
 
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 15;
-      const contentWidth = pageWidth - margin * 2; // 180 mm
-      let currentY = margin;
+      // Exact 21x28 cm sheet size: 595.28 pt x 793.7 pt
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: [595.28, 793.7],
+      });
 
-      // 1. White Background
-      pdf.setFillColor(255, 255, 255);
-      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
-
-      // 2. Header Clinic & Contact
-      if (logoDataUrl) {
-        pdf.addImage(logoDataUrl, 'PNG', margin, currentY - 1, 38, 14.5);
-      } else {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(12);
-        pdf.setTextColor(68, 69, 72);
-        pdf.text('2KarolT', margin, currentY + 6);
-      }
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(14);
-      pdf.setTextColor(30, 41, 59); // slate-800
-      pdf.text(selectedPrescription.clinicName || 'Centro Médico Niño Jesús', pageWidth - margin, currentY + 4, { align: 'right' });
-
-      currentY += 8;
-      pdf.setFontSize(9);
-      const addr = doctorProfile?.address || 'Av. Cañoto Nº 580, Rafael Peña. Piso 5, consultorio 512.';
-      const parts = addr.split(',');
-      if (parts.length >= 2) {
-        const part1 = parts[0] + ',';
-        const part2 = parts.slice(1).join(',').trim();
-        pdf.text(part1, pageWidth - margin - 7, currentY, { align: 'right' });
-        pdf.text(part2, pageWidth - margin - 7, currentY + 4, { align: 'right' });
-        currentY += 4;
-      } else {
-        pdf.text(addr, pageWidth - margin - 7, currentY, { align: 'right' });
-      }
-      if (ubiIconDataUrl) {
-        pdf.addImage(ubiIconDataUrl, 'PNG', pageWidth - margin - 4.5, currentY - 5.5, 4, 5.1);
-      }
-
-      currentY += 8;
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      pdf.setTextColor(30, 41, 59);
-      const phoneText = doctorProfile?.phone || '73887070';
-      pdf.text(phoneText, pageWidth - margin - 7, currentY, { align: 'right' });
-      if (waIconDataUrl) {
-        pdf.addImage(waIconDataUrl, 'PNG', pageWidth - margin - 4.5, currentY - 3.8, 4.2, 4.2);
-      }
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(148, 163, 184);
-      pdf.text(`Cédula Profesional: ${selectedPrescription.doctorLicense || '10293847'}`, margin, currentY);
-
-      currentY += 5;
-      // Divider line
-      pdf.setDrawColor(234, 230, 225);
-      pdf.setLineWidth(0.3);
-      pdf.line(margin, currentY, pageWidth - margin, currentY);
-
-      currentY += 8;
-
-      // 3. Patient Metadata Box
-      pdf.setFillColor(251, 250, 248); // #fbfaf8
-      pdf.setDrawColor(234, 230, 225);
-      pdf.roundedRect(margin, currentY, contentWidth, 22, 2, 2, 'FD');
-
-      const colWidth = contentWidth / 3;
-      // Patient Name
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(148, 163, 184);
-      pdf.text('PACIENTE', margin + 5, currentY + 6);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text(selectedPrescription.patientName || '', margin + 5, currentY + 14);
-
-      // Date
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(148, 163, 184);
-      pdf.text('FECHA DE EMISIÓN', margin + colWidth + 5, currentY + 6);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      pdf.setTextColor(30, 41, 59);
-      const dateStr = new Date(selectedPrescription.createdAt).toLocaleDateString() + ' ' + new Date(selectedPrescription.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-      pdf.text(dateStr, margin + colWidth + 5, currentY + 14);
-
-      // Diagnosis
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(148, 163, 184);
-      pdf.text('DIAGNÓSTICO', margin + colWidth * 2 + 5, currentY + 6);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      pdf.setTextColor(30, 41, 59);
-      const diagLines = pdf.splitTextToSize(selectedPrescription.diagnosis || '', colWidth - 10);
-      pdf.text(diagLines[0] || '', margin + colWidth * 2 + 5, currentY + 14);
-
-      currentY += 28;
-
-      // 4. Prescriptions / Medications Section
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(13);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text('Prescripción de Medicamentos', margin, currentY);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(181, 115, 103);
-      pdf.text('TRATAMIENTO E INDICACIONES', pageWidth - margin, currentY, { align: 'right' });
-
-      currentY += 4;
-      pdf.setDrawColor(234, 230, 225);
-      pdf.line(margin, currentY, pageWidth - margin, currentY);
-
-      currentY += 8;
-
-      try {
-        const items: MedicationItem[] = JSON.parse(selectedPrescription.medications);
-        if (items && items.length > 0) {
-          items.forEach((med, idx) => {
-            const line1 = formatMedicationLine1(med, idx);
-            const line2 = formatMedicationLine2(med);
-
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(10);
-            pdf.setTextColor(15, 23, 42);
-            const wrappedLine1 = pdf.splitTextToSize(line1, contentWidth);
-            pdf.text(wrappedLine1, margin, currentY);
-            currentY += (wrappedLine1.length || 1) * 5;
-
-            if (line2) {
-              pdf.setFont('helvetica', 'normal');
-              pdf.setFontSize(9);
-              pdf.setTextColor(51, 65, 85);
-              const wrappedLine2 = pdf.splitTextToSize(line2, contentWidth - 6);
-              pdf.text(wrappedLine2, margin + 5, currentY);
-              currentY += (wrappedLine2.length || 1) * 4.5;
-            }
-
-            if (med.notes && med.notes !== med.fullIndication && med.notes !== line2 && med.notes.trim() !== "") {
-              pdf.setFont('helvetica', 'italic');
-              pdf.setFontSize(8);
-              pdf.setTextColor(181, 115, 103);
-              const wrappedNote = pdf.splitTextToSize(`Nota: ${med.notes}`, contentWidth - 6);
-              pdf.text(wrappedNote, margin + 5, currentY);
-              currentY += (wrappedNote.length || 1) * 4;
-            }
-
-            currentY += 4;
-          });
-        }
-      } catch (e) {
-        pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(9);
-        pdf.setTextColor(239, 68, 68);
-        pdf.text('Error al cargar tratamiento', margin, currentY);
-        currentY += 8;
-      }
-
-      // General Instructions if any
-      if (selectedPrescription.instructions) {
-        currentY += 4;
-        pdf.setFillColor(251, 250, 248);
-        pdf.setDrawColor(234, 230, 225);
-        pdf.roundedRect(margin, currentY, contentWidth, 18, 2, 2, 'FD');
-
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(8);
-        pdf.setTextColor(181, 115, 103);
-        pdf.text('INDICACIONES GENERALES Y CUIDADOS', margin + 4, currentY + 5);
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8.5);
-        pdf.setTextColor(71, 85, 105);
-        const instLines = pdf.splitTextToSize(selectedPrescription.instructions, contentWidth - 8);
-        pdf.text(instLines, margin + 4, currentY + 11);
-        currentY += 20;
-      }
-
-      // 5. Bottom Section: Signature & Footer Banner
-      const sigY = 242;
-      pdf.setDrawColor(203, 213, 225);
-      pdf.setLineWidth(0.4);
-      pdf.line(pageWidth / 2 - 35, sigY, pageWidth / 2 + 35, sigY);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      pdf.setTextColor(30, 41, 59);
-      const docCleanName = `Dra. ${selectedPrescription.doctorName.replace(/dra\./gi, '').replace(/dr\./gi, '').trim()}`;
-      pdf.text(docCleanName, pageWidth / 2, sigY + 5, { align: 'center' });
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(148, 163, 184);
-      pdf.text(`Especialista en ${doctorProfile?.specialty || 'Dermatología'}`, pageWidth / 2, sigY + 9, { align: 'center' });
-
-      // Footer Banner Background (Vector Rectangle at bottom of page)
-      const bannerHeight = 16;
-      const bannerY = pageHeight - bannerHeight;
-      pdf.setFillColor(204, 133, 118); // #cc8576
-      pdf.rect(0, bannerY, pageWidth, bannerHeight, 'F');
-
-      // Footer text items (TikTok, Facebook, Instagram) with icons
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(255, 255, 255);
-      
-      const tiktokText = doctorProfile?.tiktok || '@dra.karoltalavera';
-      const fbText = doctorProfile?.facebook || 'Dra. Karol Talavera - Dermatóloga';
-      const igText = doctorProfile?.instagram || '@dra.karoltalavera';
-
-      const x1 = 35;
-      const x2 = 105;
-      const x3 = 175;
-      const iconSize = 4.2;
-      const yIcon = bannerY + (bannerHeight - iconSize) / 2;
-      const yText = bannerY + bannerHeight / 2 + 1.2;
-
-      // TikTok
-      const tW1 = pdf.getTextWidth(tiktokText);
-      const totalW1 = iconSize + 2 + tW1;
-      let startX1 = x1 - totalW1 / 2;
-      if (tiktokIconDataUrl) {
-        pdf.addImage(tiktokIconDataUrl, 'PNG', startX1, yIcon, iconSize, iconSize);
-        startX1 += iconSize + 2;
-      }
-      pdf.text(tiktokText, startX1, yText);
-
-      // Facebook
-      const tW2 = pdf.getTextWidth(fbText);
-      const totalW2 = iconSize + 2 + tW2;
-      let startX2 = x2 - totalW2 / 2;
-      if (fbIconDataUrl) {
-        pdf.addImage(fbIconDataUrl, 'PNG', startX2, yIcon, iconSize, iconSize);
-        startX2 += iconSize + 2;
-      }
-      pdf.text(fbText, startX2, yText);
-
-      // Instagram
-      const tW3 = pdf.getTextWidth(igText);
-      const totalW3 = iconSize + 2 + tW3;
-      let startX3 = x3 - totalW3 / 2;
-      if (igIconDataUrl) {
-        pdf.addImage(igIconDataUrl, 'PNG', startX3, yIcon, iconSize, iconSize);
-        startX3 += iconSize + 2;
-      }
-      pdf.text(igText, startX3, yText);
+      pdf.addImage(pngDataUrl, 'PNG', 0, 0, 595.28, 793.7);
 
       // Save PDF
       const patientSlug = (selectedPrescription.patientName || 'Paciente')
@@ -2213,7 +2017,7 @@ export default function App() {
         }, 4000);
       }
     } catch (error: any) {
-      console.error('Error generating vector PDF:', error);
+      console.error('Error generating PDF:', error);
       window.print();
     } finally {
       setIsDownloadingPdf(false);
@@ -2995,286 +2799,346 @@ export default function App() {
 
                     {/* HORIZONTAL WRAPPER TO PREVENT NARROW SQUISHING ON PHONES */}
                     <div className="w-full overflow-x-auto pb-4 pt-0.5 rounded-2xl border border-brand-border/40 sm:border-0 bg-brand-linen/10 sm:bg-transparent">
-                      {/* MEDICAL PRESCRIPTION SHEET (PERFECT RENDER FOR THE DOCTOR) */}
-                      <div 
-                        ref={printAreaRef}
-                        className="bg-white rounded-2xl border border-brand-border shadow-lg p-6 sm:p-8 md:p-12 space-y-6 relative overflow-hidden flex flex-col justify-between select-none min-w-[620px] sm:min-w-0 mx-auto min-h-[750px] sm:min-h-[850px] md:min-h-[920px]"
-                        id="printable-prescription"
-                        style={{
-                          fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
-                          backgroundColor: "#ffffff",
-                          color: "#1e293b"
-                        }}
-                      >
-                        <div>
-                          {/* Header medical card */}
-                          <div className="flex flex-row justify-between items-start pb-4 gap-4"
+                      {/* MEDICAL PRESCRIPTION SHEET (PERFECT 21x28 CM RENDER FOR SCREEN AND PRINT) */}
+                      {(() => {
+                        const selPatient = selectedPrescription 
+                          ? patients.find(p => p.id === selectedPrescription.patientId || `${p.name} ${p.lastName}`.trim().toLowerCase() === selectedPrescription.patientName.trim().toLowerCase()) 
+                          : null;
+                        let ageDisplay = '';
+                        if (selPatient?.dob) {
+                          const birthDate = new Date(selPatient.dob);
+                          const today = new Date();
+                          let calculatedAge = today.getFullYear() - birthDate.getFullYear();
+                          const m = today.getMonth() - birthDate.getMonth();
+                          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                            calculatedAge--;
+                          }
+                          if (!isNaN(calculatedAge) && calculatedAge >= 0) {
+                            ageDisplay = `${calculatedAge} años`;
+                          }
+                        }
+
+                        let parsedMeds: MedicationItem[] = [];
+                        try {
+                          parsedMeds = JSON.parse(selectedPrescription.medications) || [];
+                        } catch (e) {
+                          parsedMeds = [];
+                        }
+
+                        const dateFormatted = new Date(selectedPrescription.createdAt).toLocaleDateString() + ' ' + new Date(selectedPrescription.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+                        const headerClinicName = selectedPrescription.clinicName || doctorProfile?.clinicName || 'Centro Médico Niño Jesús';
+                        const headerPhone = doctorProfile?.phone ? (doctorProfile.phone.startsWith('+') ? doctorProfile.phone : '+591 ' + doctorProfile.phone) : '+591 73887070';
+                        const headerLicense = selectedPrescription.doctorLicense || doctorProfile?.licenseId || 'T-1657';
+
+                        const rawAddr = doctorProfile?.address?.trim();
+                        let headerAddrLines: string[] = [];
+                        if (rawAddr) {
+                          if (rawAddr.includes('\n')) {
+                            headerAddrLines = rawAddr.split('\n').map(s => s.trim()).filter(Boolean);
+                          } else {
+                            headerAddrLines = wrapSvgText(rawAddr, 38);
+                          }
+                        } else {
+                          headerAddrLines = ['Piso 5 - Consultorio 512', '(Av. Cañoto esquina Rafael Peña)'];
+                        }
+
+                        return (
+                          <div 
+                            ref={printAreaRef}
+                            className="bg-white rounded-2xl border border-brand-border shadow-lg relative overflow-hidden select-none max-w-[650px] mx-auto p-0 print:border-none print:shadow-none print:rounded-none print:max-w-none"
+                            id="printable-prescription"
                             style={{
-                              display: "flex",
-                              flexDirection: "row",
-                              justifyContent: "space-between",
-                              alignItems: "flex-start",
-                              paddingBottom: "16px",
-                              gap: "16px"
-                            }}>
-                            {/* Left Logo Side */}
-                            <div className="flex items-start">
-                              <svg id="main-logo-svg" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 133.06 50.19" className="h-16 md:h-20 w-auto shrink-0 select-none">
-                                <defs>
-                                  <style>{`
-                                    .cls-1{fill:#444548;}
-                                    .cls-2{fill:#bf815e;}
-                                    .cls-3{fill:#dc968b;}
-                                    .cls-4{fill:#c89582;}
-                                  `}</style>
-                                </defs>
-                                <title>logo 2karolT</title>
-                                <g id="Capa_2" data-name="Capa 2">
-                                  <g id="Capa_1-2" data-name="Capa 1-2">
-                                    <g id="Capa_2-2" data-name="Capa 2-2">
-                                      <g id="Capa_1-2-2" data-name="Capa_1-2-2">
-                                        <path className="cls-1" d="M22.29,48.19A23,23,0,0,1,6.4,41.07a24.12,24.12,0,0,1-2.76-3.53,22,22,0,0,1-2-4A23.29,23.29,0,0,1,14.77,3.4a23.72,23.72,0,0,1,9.09-1.63,23.39,23.39,0,0,1,21,15.56A23.12,23.12,0,0,1,22.29,48.18m0-.19a22.35,22.35,0,0,0,4.4-.29A22,22,0,0,0,32,5.82a21,21,0,0,0-4-1.3A22.24,22.24,0,0,0,23.78,4a21.41,21.41,0,0,0-8.32,1.22,22,22,0,0,0-2,40.6A22.61,22.61,0,0,0,22.3,48" transform="translate(-0.04 0)"/>
-                                        <path className="cls-2" d="M1,47.16A1.57,1.57,0,0,0,1.3,47l.27-.16a5.5,5.5,0,0,0,.5-.34,11.71,11.71,0,0,0,1-.76,15.68,15.68,0,0,0,1.62-1.64A17.13,17.13,0,0,0,7,40.61c.31-.61.59-1.23.84-1.87a9.72,9.72,0,0,0,.34-1l.16-.49c.06-.17.11-.34.17-.52.44-1.42.89-3,1.39-4.5s1-3.09,1.72-4.65A33,33,0,0,1,14,23.06a21.52,21.52,0,0,1,1.52-2.16,18.23,18.23,0,0,1,1.83-2,11.33,11.33,0,0,1,2.22-1.61,6.34,6.34,0,0,1,2.58-.81,11.31,11.31,0,0,0-1.33,2.08A20.67,20.67,0,0,0,20,20.71c-.51,1.44-.92,2.91-1.32,4.41-.8,3-1.56,6-2.56,9.14-.12.39-.25.78-.38,1.18s-.28.78-.42,1.17-.31.79-.46,1.19-.34.8-.52,1.2c-.1.2-.19.41-.29.61l-.08.15-.08.17c-.05.11-.11.21-.17.32l-.35.62c-.12.21-.25.41-.38.61a15.48,15.48,0,0,1-1.81,2.23,13.15,13.15,0,0,1-4.69,3.13,10.52,10.52,0,0,1-2.7.64,7.84,7.84,0,0,1-1.37,0,5.46,5.46,0,0,1-.69-.1l-.33-.09a.94.94,0,0,1-.4-.13" transform="translate(-0.04 0)"/>
-                                        <path className="cls-3" d="M23.54,33.33a1.86,1.86,0,0,0,.28-.21l.26-.21.5-.44c.32-.3.63-.61.93-.91.59-.62,1.14-1.24,1.66-1.88a14,14,0,0,0,1.36-2.05,19.78,19.78,0,0,0,1-2.2c.29-.75.55-1.51.81-2.25l.18-.53.17-.51L31,21c.24-.75.5-1.54.78-2.34s.58-1.62.89-2.45c.62-1.65,1.3-3.32,2.11-5a32.07,32.07,0,0,1,2.85-4.83,24,24,0,0,1,1.82-2.21A18.67,18.67,0,0,1,41.65,2.3,11.65,11.65,0,0,1,46.75,0,18.37,18.37,0,0,0,43.6,4.09a29.32,29.32,0,0,0-2,4.47c-.56,1.54-1,3.12-1.48,4.74s-.89,3.25-1.35,4.93A33.19,33.19,0,0,1,37,23.37c-.2.44-.42.88-.67,1.32-.13.23-.26.45-.4.67s-.14.24-.21.34l-.22.3a18.67,18.67,0,0,1-2,2.22,25.47,25.47,0,0,1-2.22,1.92c-.77.58-1.57,1.13-2.39,1.63A12.22,12.22,0,0,1,26.36,33a10.65,10.65,0,0,1-1.36.3c-.24,0-.47.06-.71.07a4.33,4.33,0,0,1-.72,0" transform="translate(-0.04 0)"/>
-                                        <path className="cls-4" d="M15.81,35h.54l.52.06a5.06,5.06,0,0,1,1,.2,15.49,15.49,0,0,1,1.86.6,15.23,15.23,0,0,1,3.17,1.73c.47.34.92.7,1.36,1.08l.63.59.31.3.34.34c.89.9,1.83,1.88,2.81,2.84s2,1.91,3.12,2.81A28.28,28.28,0,0,0,35,48.07a18.65,18.65,0,0,0,2,1,15,15,0,0,0,2.16.77,9.42,9.42,0,0,0,2.3.35,5.42,5.42,0,0,0,2.25-.42,9.68,9.68,0,0,1-1.81-1,16.52,16.52,0,0,1-1.51-1.26,36,36,0,0,1-2.73-2.8c-1.77-1.93-3.54-3.93-5.51-5.87-.24-.25-.5-.49-.75-.73l-.77-.72c-.26-.24-.54-.48-.82-.71S29.27,36.2,29,36l-.46-.34-.11-.09-.12-.08L28,35.28l-.51-.34c-.17-.11-.35-.21-.52-.3a12.36,12.36,0,0,0-2.23-1,11.21,11.21,0,0,0-4.74-.5,9,9,0,0,0-2.28.58,7.29,7.29,0,0,0-1,.52,3.12,3.12,0,0,0-.47.34,2.09,2.09,0,0,0-.22.2,1.24,1.24,0,0,0-.17.23" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M61.83,24.65l-.58-.91q-1.92-3-3.11-4.72a18.79,18.79,0,0,1-2.26,1.09v4.55H54.2V13.26h1.71V19a10.57,10.57,0,0,0,3.52-2.39,6.35,6.35,0,0,0,1.77-3.37H63a6.84,6.84,0,0,1-1.17,2.61,10.51,10.51,0,0,1-2.35,2.31c.67,1,1.37,2.08,2.09,3.12s1.51,2.15,2.35,3.33Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M73.3,18.46q2.22,5.09,2.77,6.21H74c-.35-.87-.69-1.72-1-2.55l-.18-.46H67.74c-.45,1.14-.84,2.14-1.15,3H65.06l.68-1.59q.36-.87,1.62-3.84T69.54,14a.42.42,0,0,1-.29-.24.73.73,0,0,1-.08-.46h1.58c.19,0,.32.06.37.18Zm-.88,2.08-.92-2.25L71,17q-.47-1.1-.69-1.8c-.31.92-.81,2.2-1.5,3.86-.4,1-.6,1.47-.61,1.5Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M84.29,24.67c-.09-.19-.47-.85-1.14-2s-1.15-1.82-1.39-2.2H78.93v4.18h-1.7V13.3H81a6.52,6.52,0,0,1,2.58.47A3.54,3.54,0,0,1,85.18,15a3.37,3.37,0,0,1,.55,2,3.24,3.24,0,0,1-.61,2,3.58,3.58,0,0,1-1.78,1.21c.41.67,1,1.55,1.62,2.62a18.25,18.25,0,0,0,1.22,1.89Zm-3.24-5.25a3.46,3.46,0,0,0,2.18-.6A2.09,2.09,0,0,0,84,17.06a2.4,2.4,0,0,0-.8-2,3.6,3.6,0,0,0-2.31-.67h-1.2a1.46,1.46,0,0,0-.55.07.3.3,0,0,0-.2.26v4.5a4.69,4.69,0,0,0,1.29.15Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M89.71,24.07A5.74,5.74,0,0,1,87.6,22a5.84,5.84,0,0,1-.77-3,6.16,6.16,0,0,1,.75-3,5.37,5.37,0,0,1,2.08-2.07,6.15,6.15,0,0,1,5.86,0,5.43,5.43,0,0,1,2.1,2.1,6.32,6.32,0,0,1,0,6,5.47,5.47,0,0,1-2.06,2.1,6.05,6.05,0,0,1-5.89,0m5-.84A3.76,3.76,0,0,0,96,21.8a4.73,4.73,0,0,0,.48-2.19A6.85,6.85,0,0,0,96,16.85a4.6,4.6,0,0,0-1.44-1.91,3.51,3.51,0,0,0-2.12-.68,3.91,3.91,0,0,0-2,.52,3.57,3.57,0,0,0-1.37,1.46,4.5,4.5,0,0,0-.49,2.1,7.38,7.38,0,0,0,.52,2.82,4.62,4.62,0,0,0,1.46,1.95,3.39,3.39,0,0,0,2.12.71,3.63,3.63,0,0,0,2-.54" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M99.75,24.66V13.26h1.7V23.38a5.28,5.28,0,0,0,1.19.12c2.42,0,3.84,0,4.28-.06v1.17Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M62.7,28.81H59.28V39.09H57.6V28.82c-1.14,0-2.27,0-3.41.05v-1.2h8.5Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M69.22,32.82Q71.43,37.91,72,39H69.92c-.36-.86-.69-1.71-1-2.55L68.74,36H63.67c-.45,1.13-.84,2.14-1.15,3H61l.68-1.59,1.62-3.83q1.26-3,2.17-5.25a.45.45,0,0,1-.3-.24.81.81,0,0,1-.08-.46h1.58c.19,0,.32.06.37.18Zm-.88,2.08-.92-2.25-.55-1.3q-.47-1.09-.69-1.8c-.31.91-.81,2.2-1.49,3.86l-.62,1.49Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M73.38,39V27.64h1.71v10.1a5.29,5.29,0,0,0,1.19.13c2.41,0,3.84,0,4.27-.07V39Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M90,32.84q2.22,5.08,2.76,6.21h-2c-.36-.87-.69-1.72-1-2.55l-.18-.5H84.47c-.46,1.14-.84,2.14-1.15,3H81.81l.68-1.59q.36-.87,1.62-3.84t2.17-5.24a.5.5,0,0,1-.3-.25.79.79,0,0,1-.08-.45h1.58a.34.34,0,0,1,.37.18Zm-.87,2.08-.93-2.24a9.51,9.51,0,0,0-.54-1.31c-.31-.73-.5-1.37-.66-1.79-.32.91-.81,2.19-1.5,3.85-.4,1-.6,1.47-.61,1.5Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M93.22,27.67l1,2.61L96.86,37c.59-1.59,1.28-3.36,2-5.33.85-2.2,1.36-3.52,1.53-4H102c-.31.62-.92,2-1.82,4.17s-1.85,4.57-2.85,7.21H96.08q-1.15-2.77-2.85-6.7c-1.13-2.62-1.83-4.19-2.08-4.7Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M108.73,37.9a13.75,13.75,0,0,0,1.9-.06V39h-7.57V27.63h7.31v1.19c-1.1,0-2.83-.07-5.18-.07-.26,0-.4.07-.44.21v3.63h.79c.81,0,2.06,0,3.72-.07v1.23h-4.51v4.06a5.48,5.48,0,0,0,1.34.11h2.64" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M119,39.05c-.09-.2-.47-.85-1.14-2s-1.13-1.85-1.38-2.23h-2.83V39H112V27.66h3.71a6.7,6.7,0,0,1,2.58.46,3.69,3.69,0,0,1,1.62,1.3,3.23,3.23,0,0,1,.55,1.91,3.18,3.18,0,0,1-.61,2,3.52,3.52,0,0,1-1.77,1.21l1.61,2.61c.67,1.07,1.08,1.7,1.23,1.9Zm-3.23-5.25a3.51,3.51,0,0,0,2.18-.59,2.08,2.08,0,0,0,.76-1.76,2.4,2.4,0,0,0-.8-1.95,3.51,3.51,0,0,0-2.3-.68H114.4a1.7,1.7,0,0,0-.55.07.28.28,0,0,0-.19.26v4.5a4.62,4.62,0,0,0,1.28.15Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M130.34,32.84q2.21,5.08,2.76,6.21H131c-.36-.87-.7-1.72-1-2.55l-.18-.46h-5.07c-.45,1.14-.84,2.14-1.15,3h-1.5l.69-1.59c.23-.58.77-1.86,1.61-3.84s1.56-3.73,2.17-5.24a.45.45,0,0,1-.29-.25.65.65,0,0,1-.08-.45h1.57a.35.35,0,0,1,.38.18Zm-.88,2.08-.93-2.24c-.05-.14-.23-.58-.54-1.31s-.54-1.33-.69-1.79c-.31.91-.81,2.19-1.49,3.85l-.62,1.5Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M57.39,43.27a2,2,0,0,1-1.92,2.08H54.23a.09.09,0,0,1-.08-.08h0v-4a.07.07,0,0,1,.05-.09h1A2,2,0,0,1,57.39,43,2.62,2.62,0,0,1,57.39,43.27Zm-.56,0a1.43,1.43,0,0,0-1.27-1.57,1.82,1.82,0,0,0-.33,0H54.7v3.14h.53a1.44,1.44,0,0,0,1.6-1.24A1.82,1.82,0,0,0,56.83,43.27Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M62.06,44.93v.32s0,.08-.07.09H59.44a.09.09,0,0,1-.09-.08h0v-4a.09.09,0,0,1,.08-.09H62a.09.09,0,0,1,.09.08h0v.33a.09.09,0,0,1-.08.08h-2.1v1.23h1.9a.09.09,0,0,1,.09.08h0v.32a.09.09,0,0,1-.08.09H59.91v1.4H62a.09.09,0,0,1,.09.09h0Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M67.11,45.24c0,.06,0,.1-.07.1h-.39a.11.11,0,0,1-.1-.06l-.77-1.48H64.7v1.45a.09.09,0,0,1-.08.09h-.39a.09.09,0,0,1-.09-.08h0v-4s0-.08.07-.09H65.7c1.09,0,1.49.46,1.49,1.3a1.12,1.12,0,0,1-.88,1.24ZM64.7,43.3h1c.55,0,.92-.15.92-.8s-.37-.8-.92-.8h-1Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M73.37,41.29v4a.09.09,0,0,1-.08.09H72.9a.09.09,0,0,1-.09-.08h0v-3l-1.26,3a.1.1,0,0,1-.1.07h-.37a.08.08,0,0,1-.1-.06h0l-1.26-3v3a.09.09,0,0,1-.08.09h-.39a.09.09,0,0,1-.09-.08h0v-4a.09.09,0,0,1,.08-.09h.48a.11.11,0,0,1,.11.06l1.43,3.46,1.43-3.46a.11.11,0,0,1,.11-.06h.48a.09.09,0,0,1,.09.08Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M78.8,45.34h-.39a.11.11,0,0,1-.1-.07l-.28-.8H76.13l-.3.8a.1.1,0,0,1-.1.08h-.38c-.07,0-.1-.05-.07-.11l1.5-4a.12.12,0,0,1,.11-.08h.37a.12.12,0,0,1,.11.08l1.51,4a.08.08,0,0,1-.06.1ZM77.8,44,77,41.89,76.3,44Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M83.33,41.29v.33a.09.09,0,0,1-.08.08H82v3.55a.09.09,0,0,1-.08.09h-.39a.09.09,0,0,1-.09-.08h0v-4H80.2s-.08,0-.09-.07h0V41.3a.09.09,0,0,1,.08-.09h3a.09.09,0,0,1,.09.08Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M85,43.29a2.12,2.12,0,1,1,2.12,2.13A2.12,2.12,0,0,1,85,43.29Zm3.69,0a1.58,1.58,0,1,0-1.57,1.61,1.58,1.58,0,0,0,1.57-1.61Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M93.94,44.93v.32s0,.08-.07.09H91.35s-.08,0-.09-.07h0v-4s0-.08.07-.09h.39s.08,0,.09.07h0V44.8h2s.08,0,.09.07Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M95.65,43.29a2.12,2.12,0,1,1,2.12,2.13,2.12,2.12,0,0,1-2.12-2.13Zm3.69,0a1.58,1.58,0,1,0-1.57,1.61,1.57,1.57,0,0,0,1.57-1.57v0Zm-1-3.23L98,40.8a.1.1,0,0,1-.1.08h-.28c-.07,0-.1,0-.07-.1L97.9,40a.12.12,0,0,1,.1,0h.29c.07,0,.1,0,.07.1Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M105.83,43.25v.23a1.82,1.82,0,0,1-1.69,1.94h-.2a2.14,2.14,0,0,1,0-4.27,2,2,0,0,1,1.41.57v.11h0l-.24.25H105a1.56,1.56,0,0,0-1-.4,1.6,1.6,0,0,0,0,3.19,1.26,1.26,0,0,0,1.36-1.16v-.07H104s-.08,0-.09-.07h0v-.32a.09.09,0,0,1,.08-.09h1.76s.08,0,.09.07h0Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M110.93,45.34h-.38a.08.08,0,0,1-.1-.07l-.28-.8h-1.91l-.29.8a.1.1,0,0,1-.1.08h-.39c-.06,0-.09-.05-.07-.11l1.51-4a.12.12,0,0,1,.11-.08h.37a.12.12,0,0,1,.11.08l1.51,4C111,45.3,111,45.34,110.93,45.34ZM110,44l-.77-2.1-.77,2.1Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M57.19,9.43a1.86,1.86,0,0,1-1.71,2H54.2a.08.08,0,0,1-.08-.07h0V7.56a.08.08,0,0,1,.07-.08h1a1.87,1.87,0,0,1,2,1.71Zm-.53,0A1.37,1.37,0,0,0,55.38,8h-.74v3h.5a1.37,1.37,0,0,0,1.52-1.18,1.61,1.61,0,0,0,0-.31Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M60.73,11.29c0,.06,0,.1-.06.1H60.3a.11.11,0,0,1-.1-.06l-.72-1.4h-1v1.38a.08.08,0,0,1-.07.08H58a.1.1,0,0,1-.09-.07h0V7.56A.09.09,0,0,1,58,7.48H59.4c1,0,1.4.43,1.4,1.22A1.06,1.06,0,0,1,60,9.88ZM58.45,9.46h1c.52,0,.86-.14.86-.76S60,8,59.44,8h-1Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M64.63,11.39h-.36a.1.1,0,0,1-.09-.07l-.28-.75H62.11l-.28.75a.08.08,0,0,1-.1.07h-.36c-.06,0-.09,0-.07-.09l1.43-3.75a.08.08,0,0,1,.1-.07h.35a.1.1,0,0,1,.1.07L64.7,11.3S64.7,11.39,64.63,11.39Zm-.9-1.28-.73-2-.72,2Z" transform="translate(-0.04 0)"/>
-                                        <path className="cls-1" d="M65.29,11.07a.4.4,0,0,1,.37-.42.39.39,0,0,1,.42.36h0m0,.05a.39.39,0,0,1-.36.42h0a.41.41,0,0,1-.43-.37Z" transform="translate(-0.04 0)"/>
-                                      </g>
+                              backgroundColor: "#ffffff",
+                              aspectRatio: "595.28 / 793.7",
+                              width: "100%"
+                            }}
+                          >
+                            <svg 
+                              id="prescription-svg-doc" 
+                              data-name="Capa 1" 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              viewBox="0 0 595.28 793.7"
+                              className="w-full h-auto block"
+                            >
+                              <defs>
+                                <style>{`
+                                  .cls-1,.cls-16{fill:#fff;}
+                                  .cls-2{fill:#545556;}
+                                  .cls-3{fill:#dc968b;}
+                                  .cls-4{fill:#f8e4df;}
+                                  .cls-19,.cls-20,.cls-5{fill:#454548;}
+                                  .cls-15,.cls-6{fill:#bf815e;}
+                                  .cls-7{fill:#c89582;}
+                                  .cls-17,.cls-8{fill:none;stroke-miterlimit:10;}
+                                  .cls-8{stroke:#b2b1b2;}
+                                  .cls-9{font-size:9px;}
+                                  .cls-10,.cls-11,.cls-9{fill:#1e293b;}
+                                  .cls-18,.cls-20,.cls-9{font-family:Arial, Helvetica, sans-serif;}
+                                  .cls-10,.cls-15{font-size:11px;}
+                                  .cls-10,.cls-11,.cls-15,.cls-16,.cls-19{font-family:Arial, Helvetica, sans-serif;font-weight:700;}
+                                  .cls-11{font-size:10px;}
+                                  .cls-12{opacity:0.4;}
+                                  .cls-13{fill:#faf0ee;}
+                                  .cls-14{fill:#faecea;}
+                                  .cls-16,.cls-18{font-size:8px;}
+                                  .cls-17{stroke:#cdd6e0;stroke-width:1.13px;}
+                                  .cls-18{fill:#95a3b8;}
+                                  .cls-19{font-size:12.51px;}
+                                  .cls-20{font-size:11.26px;}
+                                `}</style>
+                              </defs>
+
+                              {/* 1. Base Sheet White Background */}
+                              <rect className="cls-1" x="0.86" y="-0.49" width="595.28" height="793.7"/>
+
+                              {/* 2. Top-Right Dark Grey Bar */}
+                              <rect className="cls-2" x="297.64" y="-5.51" width="303.31" height="19.68"/>
+
+                              {/* 3. Bottom Pink Bar */}
+                              <rect className="cls-3" x="-6.63" y="754" width="607.57" height="45.21"/>
+
+                              {/* 4. Top-Left Soft Pink Curved Accent */}
+                              <path className="cls-4" d="M238.72,119.83H-5.67V-5.51H339L285.82,91.88A53.68,53.68,0,0,1,238.72,119.83Z"/>
+
+                              {/* 5. Logo Vector Silhouette on Top-Left */}
+                              <g id="Capa_2" data-name="Capa 2">
+                                <g id="Capa_1-2" data-name="Capa 1-2">
+                                  <g id="Capa_2-2" data-name="Capa 2-2">
+                                    <g id="Capa_1-2-2" data-name="Capa 1-2-2">
+                                      <path className="cls-5" d="M54.09,101.57A40.78,40.78,0,0,1,25.92,89,43.6,43.6,0,0,1,21,82.69a40.1,40.1,0,0,1-3.54-7.09A41.31,41.31,0,0,1,40.76,22.16a42.05,42.05,0,0,1,16.11-2.89A41.49,41.49,0,0,1,94.11,46.86a41,41,0,0,1-40,54.69m0-.33a40,40,0,0,0,7.8-.52,39,39,0,0,0,9.42-74.25,37.76,37.76,0,0,0-7.1-2.31,40,40,0,0,0-7.48-.92A38,38,0,0,0,42,25.39a39,39,0,0,0-3.55,72,39.84,39.84,0,0,0,15.68,3.86"/>
+                                      <path className="cls-6" d="M16.34,99.74a1.89,1.89,0,0,0,.53-.21l.48-.28a7.7,7.7,0,0,0,.89-.6,19.84,19.84,0,0,0,1.68-1.35,28.26,28.26,0,0,0,2.88-2.91A30.65,30.65,0,0,0,27,88.13c.55-1.08,1.05-2.18,1.49-3.31a16.09,16.09,0,0,0,.6-1.78l.29-.87c.1-.3.19-.6.3-.92.78-2.52,1.58-5.32,2.46-8S34,67.8,35.17,65a58.81,58.81,0,0,1,4.22-8,37.74,37.74,0,0,1,2.7-3.83,30.25,30.25,0,0,1,3.24-3.55,19.39,19.39,0,0,1,3.94-2.85,11,11,0,0,1,4.57-1.44A20.1,20.1,0,0,0,51.48,49,36.43,36.43,0,0,0,50,52.85c-.9,2.55-1.63,5.16-2.34,7.82-1.42,5.32-2.77,10.64-4.54,16.2-.21.69-.44,1.39-.67,2.1S42,80.35,41.73,81s-.55,1.4-.81,2.11-.61,1.42-.93,2.13c-.17.35-.33.72-.51,1.08l-.14.26-.14.31c-.09.19-.2.37-.3.56s-.41.73-.63,1.1-.44.73-.67,1.08a27.12,27.12,0,0,1-3.21,4,23.35,23.35,0,0,1-8.31,5.55,18.37,18.37,0,0,1-4.79,1.13,14.09,14.09,0,0,1-2.43,0,8.35,8.35,0,0,1-1.22-.18,3,3,0,0,1-.59-.15,1.54,1.54,0,0,1-.71-.24"/>
+                                      <path className="cls-3" d="M56.31,75.22a4.2,4.2,0,0,0,.49-.37l.46-.37.89-.78c.57-.53,1.12-1.08,1.65-1.61,1.05-1.1,2-2.2,2.94-3.34a23.82,23.82,0,0,0,2.41-3.63,38,38,0,0,0,1.78-3.9c.51-1.33,1-2.68,1.43-4l.32-.94.3-.91.62-2c.43-1.33.89-2.73,1.39-4.14s1-2.88,1.57-4.35c1.1-2.92,2.31-5.88,3.75-8.86a56.68,56.68,0,0,1,5-8.57,43.08,43.08,0,0,1,3.23-3.92,30.77,30.77,0,0,1,3.83-3.38,20.49,20.49,0,0,1,9-4.08,33.34,33.34,0,0,0-5.59,7.25,52.1,52.1,0,0,0-3.54,7.93c-1,2.73-1.78,5.53-2.63,8.4s-1.58,5.76-2.39,8.74a59.89,59.89,0,0,1-3.14,9.12A25.78,25.78,0,0,1,79,59.91c-.23.4-.46.79-.71,1.18s-.24.43-.37.61l-.39.53a32.33,32.33,0,0,1-3.46,3.93,45.5,45.5,0,0,1-3.93,3.41c-1.37,1-2.79,2-4.24,2.89a21.54,21.54,0,0,1-4.57,2.18,18,18,0,0,1-2.42.53c-.42,0-.83.11-1.25.13a6.84,6.84,0,0,1-1.28,0"/>
+                                      <path className="cls-7" d="M42.6,78.19a1.93,1.93,0,0,1,.48,0h.48l.92.1a8.43,8.43,0,0,1,1.77.36,24.88,24.88,0,0,1,3.3,1.06,27.11,27.11,0,0,1,5.62,3.07c.83.6,1.63,1.24,2.41,1.91l1.12,1,.55.53.6.6c1.58,1.6,3.25,3.34,5,5s3.55,3.38,5.54,5a50.76,50.76,0,0,0,6.25,4.47,33.54,33.54,0,0,0,3.55,1.77A27.28,27.28,0,0,0,84,104.5a17.07,17.07,0,0,0,4.08.62,9.57,9.57,0,0,0,4-.75,17,17,0,0,1-3.21-1.77,30.16,30.16,0,0,1-2.68-2.23,64.8,64.8,0,0,1-4.84-5C78.2,92,75.06,88.43,71.57,85c-.42-.44-.88-.87-1.33-1.29s-.9-.85-1.36-1.28-1-.85-1.46-1.26-1-.85-1.43-1.2l-.82-.6L65,79.2l-.22-.15-.55-.37-.9-.6c-.3-.2-.62-.37-.92-.53a22,22,0,0,0-4-1.78,19.93,19.93,0,0,0-8.4-.88,15.58,15.58,0,0,0-4,1,11.11,11.11,0,0,0-1.78.92,7,7,0,0,0-.83.6,3.33,3.33,0,0,0-.39.36,1.68,1.68,0,0,0-.3.4"/>
+                                      <path className="cls-5" d="M124.19,59.83l-1-1.61q-3.4-5.31-5.52-8.37a34.45,34.45,0,0,1-4,1.94v8.06h-3V39.64h3V49.89a18.88,18.88,0,0,0,6.24-4.24,11.37,11.37,0,0,0,3.14-6h3.19a11.94,11.94,0,0,1-2.08,4.62A18.6,18.6,0,0,1,120,48.4c1.19,1.77,2.43,3.69,3.7,5.53s2.68,3.81,4.17,5.9Z"/>
+                                      <path className="cls-5" d="M144.53,48.86q3.93,9,4.91,11h-3.67c-.62-1.54-1.22-3-1.77-4.52l-.32-.82h-9c-.8,2-1.49,3.8-2,5.32h-2.71L131.13,57q.63-1.53,2.87-6.8T137.86,41a.74.74,0,0,1-.51-.42,1.24,1.24,0,0,1-.14-.82H140c.34,0,.57.11.66.32ZM143,52.55l-1.63-4-.89-2.29c-.55-1.3-1-2.36-1.22-3.19-.55,1.63-1.44,3.9-2.66,6.84-.71,1.78-1.06,2.61-1.08,2.66Z"/>
+                                      <path className="cls-5" d="M164,59.87c-.16-.34-.84-1.51-2-3.55s-2-3.22-2.46-3.9h-5v7.41h-3V39.71h6.68a11.77,11.77,0,0,1,4.58.83,6.3,6.3,0,0,1,2.83,2.19,6.62,6.62,0,0,1-.1,7.09A6.33,6.33,0,0,1,162.33,52c.73,1.19,1.77,2.75,2.87,4.65A32.45,32.45,0,0,0,167.37,60Zm-5.75-9.31a6.2,6.2,0,0,0,3.87-1.06,3.71,3.71,0,0,0,1.36-3.12,4.23,4.23,0,0,0-1.42-3.55A6.41,6.41,0,0,0,158,41.64h-2.13a2.53,2.53,0,0,0-1,.13.55.55,0,0,0-.35.46v8a8.43,8.43,0,0,0,2.29.26Z"/>
+                                      <path className="cls-5" d="M173.63,58.81a10.08,10.08,0,0,1-3.75-3.67,10.44,10.44,0,0,1-1.36-5.32,10.86,10.86,0,0,1,1.33-5.32,9.5,9.5,0,0,1,3.69-3.67,10.88,10.88,0,0,1,10.39,0,9.7,9.7,0,0,1,3.72,3.72,11.27,11.27,0,0,1,0,10.64A9.66,9.66,0,0,1,184,58.91a10.73,10.73,0,0,1-10.45,0m8.87-1.49a6.53,6.53,0,0,0,2.41-2.64,8.42,8.42,0,0,0,.85-3.88,12.22,12.22,0,0,0-.92-4.89,8,8,0,0,0-2.55-3.39,6.27,6.27,0,0,0-3.76-1.21,6.81,6.81,0,0,0-3.55.93,6.36,6.36,0,0,0-2.43,2.58,8.18,8.18,0,0,0-.87,3.73,13,13,0,0,0,.93,5,8.24,8.24,0,0,0,2.58,3.45,6,6,0,0,0,3.76,1.26,6.53,6.53,0,0,0,3.55-1"/>
+                                      <path className="cls-5" d="M191.43,59.85V39.64h3V57.58a9.34,9.34,0,0,0,2.11.22c4.29,0,6.81,0,7.59-.11v2.07Z"/>
+                                      <path className="cls-5" d="M125.74,67.21h-6.07V85.44h-3V67.23c-2,0-4,0-6,.09V65.19h15.07Z"/>
+                                      <path className="cls-5" d="M137.3,74.32q3.91,9,4.93,11h-3.69c-.64-1.53-1.23-3-1.78-4.52l-.31-.8h-9c-.8,2-1.49,3.79-2,5.32h-2.7l1.21-2.82,2.87-6.79q2.23-5.33,3.85-9.31a.79.79,0,0,1-.53-.43,1.42,1.42,0,0,1-.15-.81h2.81c.33,0,.56.1.65.32ZM135.74,78l-1.63-4-1-2.31a31.22,31.22,0,0,1-1.22-3.19c-.55,1.62-1.44,3.9-2.65,6.85L128.17,78Z"/>
+                                      <path className="cls-5" d="M144.67,85.28V65.14h3V83a8.86,8.86,0,0,0,2.11.23c4.28,0,6.81,0,7.57-.12v2.13Z"/>
+                                      <path className="cls-5" d="M174.14,74.36q3.93,9,4.89,11h-3.58c-.64-1.55-1.22-3.05-1.77-4.53l-.32-.88h-9c-.81,2-1.48,3.79-2,5.32h-2.68l1.2-2.82q.65-1.54,2.88-6.81t3.84-9.29a.86.86,0,0,1-.53-.44,1.48,1.48,0,0,1-.14-.8h2.8a.61.61,0,0,1,.66.32ZM172.6,78l-1.65-4a16.71,16.71,0,0,0-1-2.32c-.55-1.3-.89-2.43-1.17-3.17-.57,1.61-1.44,3.88-2.66,6.82-.71,1.77-1.06,2.61-1.08,2.66Z"/>
+                                      <path className="cls-5" d="M179.85,65.19l1.77,4.63,4.68,11.91c1-2.82,2.27-6,3.55-9.45,1.51-3.9,2.41-6.24,2.71-7.09h2.86c-.55,1.1-1.64,3.55-3.23,7.39s-3.28,8.11-5.05,12.79h-2.22q-2-4.92-5-11.88t-3.69-8.34Z"/>
+                                      <path className="cls-5" d="M207.35,83.33a23.65,23.65,0,0,0,3.37-.11v2.06H197.29V65.12h13v2.11c-1.95,0-5-.13-9.19-.13-.46,0-.71.13-.78.38v6.43h1.4c1.44,0,3.65,0,6.6-.12V76h-8v7.2a9.49,9.49,0,0,0,2.38.19h4.68"/>
+                                      <path className="cls-5" d="M225.56,85.37c-.16-.36-.84-1.51-2-3.55s-2-3.28-2.45-3.95h-5v7.41h-2.92V65.17h6.57a11.94,11.94,0,0,1,4.58.82,6.47,6.47,0,0,1,2.87,2.3,5.76,5.76,0,0,1,1,3.39,5.6,5.6,0,0,1-1.08,3.54,6.17,6.17,0,0,1-3.13,2.15L226.78,82c1.19,1.89,1.91,3,2.18,3.37Zm-5.73-9.31a6.29,6.29,0,0,0,3.86-1A3.7,3.7,0,0,0,225,71.89a4.22,4.22,0,0,0-1.42-3.46,6.25,6.25,0,0,0-4.07-1.2H217.4a3.15,3.15,0,0,0-1,.12.52.52,0,0,0-.34.46v8a7.89,7.89,0,0,0,2.27.27Z"/>
+                                      <path className="cls-5" d="M245.66,74.36q3.92,9,4.9,11h-3.73c-.64-1.55-1.24-3.05-1.77-4.53l-.32-.81h-9c-.8,2-1.49,3.79-2,5.32h-2.66l1.23-2.82c.4-1,1.36-3.3,2.85-6.81s2.77-6.61,3.85-9.29a.82.82,0,0,1-.52-.44,1.18,1.18,0,0,1-.14-.8h2.79a.63.63,0,0,1,.67.32ZM244.1,78l-1.65-4c-.09-.25-.4-1-.95-2.32s-1-2.36-1.23-3.17q-.83,2.42-2.64,6.82l-1.1,2.66Z"/>
+                                      <path className="cls-5" d="M116.32,92.85a3.55,3.55,0,0,1-3.41,3.68h-2.19a.14.14,0,0,1-.14-.14h0v-7.1a.12.12,0,0,1,.08-.15h1.81a3.55,3.55,0,0,1,3.84,3.23A2.79,2.79,0,0,1,116.32,92.85Zm-1,0a2.54,2.54,0,0,0-2.25-2.79,2.91,2.91,0,0,0-.59,0h-.94v5.57h.94a2.53,2.53,0,0,0,2.83-2.2A2.25,2.25,0,0,0,115.33,92.85Z"/>
+                                      <path className="cls-5" d="M124.6,95.79v.57a.14.14,0,0,1-.12.16H120a.16.16,0,0,1-.16-.14h0v-7.1a.16.16,0,0,1,.14-.16h4.56a.17.17,0,0,1,.16.15h0v.58a.15.15,0,0,1-.15.14h-3.72v2.18h3.37a.16.16,0,0,1,.16.15h0v.56a.15.15,0,0,1-.14.16h-3.39v2.49h3.71a.16.16,0,0,1,.16.15h0Z"/>
+                                      <path className="cls-5" d="M133.56,96.34c0,.11,0,.18-.13.18h-.69a.21.21,0,0,1-.18-.11l-1.36-2.62h-1.92v2.57a.16.16,0,0,1-.14.16h-.69a.16.16,0,0,1-.16-.14h0v-7.1a.14.14,0,0,1,.12-.15h2.65c1.93,0,2.64.82,2.64,2.31a2,2,0,0,1-1.56,2.2Zm-4.28-3.44h1.78c1,0,1.63-.26,1.63-1.42s-.66-1.42-1.63-1.42h-1.78Z"/>
+                                      <path className="cls-5" d="M144.65,89.34v7.09a.15.15,0,0,1-.14.16h-.69a.16.16,0,0,1-.16-.14h0V91.13l-2.23,5.32a.2.2,0,0,1-.18.12h-.66a.14.14,0,0,1-.17-.1v0l-2.24-5.32v5.32a.16.16,0,0,1-.14.16h-.69a.16.16,0,0,1-.16-.15h0V89.37a.16.16,0,0,1,.14-.16h.85a.21.21,0,0,1,.2.11l2.53,6.13,2.54-6.13a.2.2,0,0,1,.19-.11h.85a.15.15,0,0,1,.16.15Z"/>
+                                      <path className="cls-5" d="M154.28,96.52h-.69a.19.19,0,0,1-.18-.13L152.9,95h-3.35L149,96.39a.23.23,0,0,1-.18.15h-.67a.13.13,0,0,1-.13-.2l2.66-7.09a.22.22,0,0,1,.2-.14h.65a.22.22,0,0,1,.2.14l2.67,7.09a.13.13,0,0,1-.1.17Zm-1.77-2.4-1.37-3.72-1.29,3.74Z"/>
+                                      <path className="cls-5" d="M162.31,89.34v.58a.14.14,0,0,1-.14.14H160v6.3a.17.17,0,0,1-.15.16h-.69a.16.16,0,0,1-.16-.14h0V90.06h-2.2s-.14,0-.16-.12h0v-.58a.16.16,0,0,1,.15-.16h5.32a.15.15,0,0,1,.15.14Z"/>
+                                      <path className="cls-5" d="M165.27,92.88A3.76,3.76,0,1,1,169,96.66a3.77,3.77,0,0,1-3.76-3.78Zm6.55,0A2.8,2.8,0,1,0,169,95.74a2.8,2.8,0,0,0,2.79-2.86Z"/>
+                                      <path className="cls-5" d="M181.13,95.79v.57a.15.15,0,0,1-.13.16h-4.47a.15.15,0,0,1-.16-.12v0h0v-7.1a.14.14,0,0,1,.13-.15h.69a.15.15,0,0,1,.16.13v0h0v6.29h3.54s.15,0,.16.12Z"/>
+                                      <path className="cls-5" d="M184.16,92.88a3.76,3.76,0,1,1,3.76,3.78,3.76,3.76,0,0,1-3.76-3.78Zm6.54,0a2.82,2.82,0,1,0,0,.08v-.08Zm-1.77-5.72-.61,1.31a.17.17,0,0,1-.17.14h-.5c-.12,0-.18,0-.12-.18l.62-1.33a.21.21,0,0,1,.17,0h.52c.12,0,.17,0,.12.18Z"/>
+                                      <path className="cls-5" d="M202.21,92.81v.41a3.24,3.24,0,0,1-3,3.44h-.34a3.79,3.79,0,0,1,0-7.57,3.51,3.51,0,0,1,2.49,1v.19h0l-.42.45h-.2A2.74,2.74,0,0,0,199,90a2.83,2.83,0,0,0,0,5.65,2.23,2.23,0,0,0,2.41-2V93.5H199s-.14,0-.16-.12h0v-.57a.16.16,0,0,1,.14-.16h3.12a.15.15,0,0,1,.16.13h0Z"/>
+                                      <path className="cls-5" d="M211.25,96.52h-.68a.15.15,0,0,1-.17-.13L209.9,95h-3.39L206,96.39a.2,2.2,0,0,1-.18.15h-.69a.14.14,0,0,1-.12-.2l2.67-7.09a.22.22,0,0,1,.2-.14h.66a.21.21,0,0,1,.19.14l2.68,7.09C211.37,96.45,211.37,96.52,211.25,96.52Zm-1.65-2.38-1.37-3.72-1.36,3.72Z"/>
+                                      <path className="cls-5" d="M116,32.85a3.31,3.31,0,0,1-3,3.55h-2.27a.15.15,0,0,1-.15-.13h0V29.53a.15.15,0,0,1,.13-.14h1.77a3.3,3.3,0,0,1,3.54,3C116,32.57,116,32.71,116,32.85Zm-.94,0a2.42,2.42,0,0,0-2.27-2.55,3.12,3.12,0,0,0-.43,0h-.88v5.32h.88A2.4,2.4,0,0,0,115,33.54a2.53,2.53,0,0,0,0-.55Z"/>
+                                      <path className="cls-5" d="M122.24,36.15c0,.1,0,.17-.1.17h-.66a.2.2,0,0,1-.18-.1L120,33.74h-1.78v2.44a.13.13,0,0,1-.12.14h-.73a.16.16,0,0,1-.16-.12h0V29.53a.15.15,0,0,1,.14-.14h2.51c1.77,0,2.48.76,2.48,2.17A1.89,1.89,0,0,1,121,33.65Zm-4-3.25H120c.93,0,1.53-.25,1.53-1.34S121,30.31,120,30.31h-1.78Z"/>
+                                      <path className="cls-5" d="M129.16,36.32h-.64a.15.15,0,0,1-.16-.12l-.5-1.33h-3.17l-.5,1.33a.14.14,0,0,1-.17.12h-.64c-.11,0-.16,0-.13-.15l2.54-6.65a.17.17,0,0,1,.18-.13h.62a.17.17,0,0,1,.17.13l2.52,6.65S129.28,36.32,129.16,36.32Zm-1.6-2.26-1.29-3.55L125,34.06Z"/>
+                                      <path className="cls-5" d="M130.33,35.76A.71.71,0,0,1,131,35a.7.7,0,0,1,.75.64v0m0,.09a.69.69,0,0,1-.63.74h0a.73.73,0,0,1-.76-.65Z"/>
                                     </g>
                                   </g>
                                 </g>
-                              </svg>
-                            </div>
+                              </g>
 
-                             {/* Right Contact Side */}
-                            <div className="text-right space-y-4 max-w-xs shrink-0 select-none"
-                            style={{
-                              textAlign: "right",
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "flex-end",
-                              gap: "12px"
-                            }}>
-                              {/* Location block */}
-                              <div className="flex items-start justify-end gap-2.5">
-                                <div className="flex flex-col items-end text-right leading-[1.35]">
-                                   <p className="font-normal text-slate-800 text-[16px] md:text-[17px] tracking-tight">{selectedPrescription.clinicName || 'Centro Médico Niño Jesús'}</p>
-                                  {(() => {
-                                    const addr = doctorProfile?.address || 'Av. Cañoto Nº 580, Rafael Peña. Piso 5, consultorio 512.';
-                                    const parts = addr.split(',');
-                                    if (parts.length >= 2) {
-                                      const part1 = parts[0] + ',';
-                                      const part2 = parts.slice(1).join(',').trim();
-                                      return (
-                                        <>
-                                          <p className="text-slate-500 text-[11px] md:text-[11.5px] font-normal mt-0.5 leading-tight">{part1}</p>
-                                          <p className="text-slate-500 text-[11px] md:text-[11.5px] font-normal leading-tight">{part2}</p>
-                                        </>
-                                      );
-                                    }
-                                    return <p className="text-slate-500 text-[11px] md:text-[11.5px] font-normal mt-0.5 leading-tight">{addr}</p>;
-                                  })()}
-                                </div>
-                                <svg id="Capa_ubi" data-name="Capa ubi" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.89 19.04" className="h-[21px] w-auto shrink-0 mt-0.5">
-                                  <path className="fill-[#dc968b]" d="M14.87,7A8.57,8.57,0,0,1,14,10.62a25,25,0,0,1-3.26,5.16c-.66.84-1.34,1.65-2,2.46A1.67,1.67,0,0,1,7.5,19a1.29,1.29,0,0,1-.87-.25,9.21,9.21,0,0,1-1.38-1.48A39.16,39.16,0,0,1,1.48,12,13.35,13.35,0,0,1,.29,9.39,6.51,6.51,0,0,1,0,6.87,7.08,7.08,0,0,1,2.43,1.94,7.34,7.34,0,0,1,6.71,0a7.48,7.48,0,0,1,7.93,5.4q.09.36.15.72C14.84,6.49,14.86,6.82,14.87,7ZM7.45,4.07a3.38,3.38,0,1,0,3.38,3.39A3.38,3.38,0,0,0,7.45,4.07Z" transform="translate(0.02 0.04)"/>
-                                </svg>
-                              </div>
+                              {/* 6. Header Divider Line */}
+                              <line className="cls-8" x1="14.17" y1="137.85" x2="581.1" y2="137.85"/>
 
-                              {/* Phone block */}
-                              <div className="flex items-center justify-end gap-2.5 pt-0.5">
-                                <span className="font-normal text-slate-800 text-[17px] md:text-[18px] tracking-tight leading-none">{doctorProfile?.phone || '73887070'}</span>
-                                <svg id="Capa_wa" data-name="Capa wa" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16.68 16.68" className="h-[21px] w-auto shrink-0">
-                                  <path className="fill-[#dc968b]" d="M7.72,0H9a4.08,4.08,0,0,1,.77.11,8.28,8.28,0,0,1,6.78,6.72c.05.29.09.59.13.88V8.92a5.19,5.19,0,0,1-.13.88,8.16,8.16,0,0,1-3,5,8.22,8.22,0,0,1-9.65.59.27.27,0,0,0-.3,0l-2.47.79-.58.18c.33-1,.66-2,1-2.92a.32.32,0,0,0,0-.33A8.15,8.15,0,0,1,.15,6.78,8.11,8.11,0,0,1,2.74,2.17a8,8,0,0,1,4.15-2ZM3.51,6.1a3.21,3.21,0,0,0,.22,1.18A7.39,7.39,0,0,0,4.82,9.11a9.39,9.39,0,0,0,5.07,3.67,3.13,3.13,0,0,0,1.74.15,2,2,0,0,0,1.73-2.12.3.3,0,0,0-.2-.33l-1.89-.91a.47.47,0,0,0-.65.14l0,.06c-.18.24-.35.48-.54.71a.53.53,0,0,1-.73.18h0A6.51,6.51,0,0,1,6.08,7.82a.36.36,0,0,1,0-.49l.58-.68A.53.53,0,0,0,6.76,6c-.24-.55-.47-1.12-.7-1.68s-.26-.54-.8-.54a1.27,1.27,0,0,0-1,.36A2.64,2.64,0,0,0,3.51,6.1Z"/>
-                                </svg>
-                              </div>
-                            </div>
-                          </div>
+                              {/* 7. Top-Right Rounded Pill Badge */}
+                              <rect className="cls-3" x="556.33" y="-22" width="23.56" height="156" rx="11.78"/>
 
-                          {/* Top Subtitle license block */}
-                          <p className="text-[11px] text-slate-400 mt-1 leading-none pl-1">
-                            Cédula Profesional: <strong className="text-slate-600 font-bold">{selectedPrescription.doctorLicense || '10293847'}</strong>
-                          </p>
+                              {/* Location Icon in Badge */}
+                              <g id="Capa_2-2-2" data-name="Capa 2">
+                                <g id="Capa_1-2-2-2" data-name="Capa 1-2">
+                                  <path className="cls-1" d="M575.27,43.3a8.25,8.25,0,0,1-.84,3.48,24.4,24.4,0,0,1-3.13,5c-.64.81-1.29,1.58-1.92,2.36a1.58,1.58,0,0,1-1.2.73,1.19,1.19,0,0,1-.83-.24A8.52,8.52,0,0,1,566,53.17a39.14,39.14,0,0,1-3.62-5.06,13.87,13.87,0,0,1-1.15-2.51,6.21,6.21,0,0,1-.27-2.42,6.75,6.75,0,0,1,2.33-4.74,7.09,7.09,0,0,1,4.11-1.87,7.2,7.2,0,0,1,7.63,5.19,5.63,5.63,0,0,1,.14.69C575.24,42.81,575.26,43.13,575.27,43.3Zm-7.13-2.82a3.25,3.25,0,1,0,3.24,3.26,3.25,3.25,0,0,0-3.24-3.26Z"/>
+                                </g>
+                              </g>
 
-                          {/* Solid Divider */}
-                          <div className="border-b border-[#eae6e1] my-4"></div>
+                              {/* WhatsApp Icon in Badge */}
+                              <g id="Capa_2-3" data-name="Capa 2">
+                                <g id="Capa_1-2-3" data-name="Capa 1-2">
+                                  <path className="cls-1" d="M567.52,72.69h1.23a3.78,3.78,0,0,1,.74.11A8,8,0,0,1,576,79.26c0,.28.09.56.13.84v1.17a4.88,4.88,0,0,1-.13.84,8,8,0,0,1-12.16,5.37.28.28,0,0,0-.28,0l-2.38.76-.56.18c.32-1,.64-1.93,1-2.81a.36.36,0,0,0,0-.32,7.92,7.92,0,0,1,1.14-10.51,7.7,7.7,0,0,1,4-1.92Zm-4,5.87a3.14,3.14,0,0,0,.21,1.13,7.14,7.14,0,0,0,1.05,1.76A9,9,0,0,0,569.6,85a3.06,3.06,0,0,0,1.67.14,1.92,1.92,0,0,0,1.67-2,.28.28,0,0,0-.2-.31l-1.81-.88a.47.47,0,0,0-.63.14l0,0c-.17.23-.33.46-.52.69a.49.49,0,0,1-.69.17h0a6.27,6.27,0,0,1-3.11-2.73.33.33,0,0,1,0-.47l.56-.66a.5.5,0,0,0,.09-.62c-.23-.53-.45-1.08-.67-1.61s-.25-.52-.77-.52a1.18,1.18,0,0,0-1,.34A2.55,2.55,0,0,0,563.47,78.56Z"/>
+                                </g>
+                              </g>
 
-                          {/* Patient metadata box */}
-                          <div className="bg-[#fbfaf8] border border-[#eae6e1] rounded-xl p-4 grid grid-cols-3 gap-4 text-xs text-slate-600"
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                              backgroundColor: "#fbfaf8",
-                              border: "1px solid #eae6e1",
-                              borderRadius: "12px",
-                              padding: "16px",
-                              gap: "16px"
-                            }}>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">PACIENTES</span>
-                              <span className="text-sm font-semibold text-brand-charcoal mt-1 block leading-tight">{selectedPrescription.patientName}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">FECHA DE EMISIÓN</span>
-                              <span className="text-sm font-semibold text-brand-charcoal mt-1 block leading-tight">
-                                {new Date(selectedPrescription.createdAt).toLocaleDateString()} {new Date(selectedPrescription.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">DIAGNÓSTICO</span>
-                              <span className="text-sm font-semibold text-brand-charcoal mt-1 block leading-tight truncate" title={selectedPrescription.diagnosis}>
-                                {selectedPrescription.diagnosis}
-                              </span>
-                            </div>
-                          </div>
+                              {/* Medical Caduceus Badge Icon */}
+                              <path className="cls-1" d="M560.1,119.2a4,4,0,0,1,.22-.69,2.14,2.14,0,0,1,1.43-1.19c.1,0,.13-.06.13-.16,0-.31,0-.62,0-.93a2.55,2.55,0,0,1,5.1,0v3a1.57,1.57,0,1,0,3.14.12,1.53,1.53,0,0,0-.13-.7c-.38-.87-.74-1.74-1.11-2.61a.4.4,0,0,0-.12-.16,3.63,3.63,0,0,1-1.68-2.23c-.37-1.35-.77-2.69-1.14-4a1.91,1.91,0,0,1,1.86-2.42H568c0-.09,0-.16,0-.22a.47.47,0,0,1,.48-.38.44.44,0,0,1,.41.43c0,.41,0,.81,0,1.22a.44.44,0,0,1-.45.43.46.46,0,0,1-.44-.45v-.13a1,1,0,0,0-1.24,1.31q.57,2.1,1.2,4.2a2.67,2.67,0,0,0,2.59,1.88,2.73,2.73,0,0,0,2.57-2c.38-1.34.76-2.69,1.15-4a1,1,0,0,0-.68-1.34,3.06,3.06,0,0,0-.54-.07,1.42,1.42,0,0,0,0,.19.45.45,0,0,1-.89,0c0-.41,0-.81,0-1.22a.45.45,0,0,1,.89,0,.86.86,0,0,0,0,.16c.19,0,.38,0,.56,0a1.92,1.92,0,0,1,1.54,2.42c-.39,1.41-.79,2.82-1.21,4.23a3.42,3.42,0,0,1-1.55,2,.45.45,0,0,0-.18.21c-.38.88-.75,1.77-1.13,2.66a1.42,1.42,0,0,0-.12.54,2.4,2.4,0,0,1-1.49,2.3,4,4,0,0,1-.67.2h-.6l-.06,0a2.45,2.45,0,0,1-2.1-2.44v-3a1.66,1.66,0,0,0-3.29-.32c0,.39,0,.79,0,1.18,0,.1,0,.13.12.16a2.2,2.2,0,0,1,1.63,2.49,2.22,2.22,0,0,1-4.33.28c0-.11-.06-.22-.08-.32Zm3.55.27a1.33,1.33,0,1,0-1.33,1.33A1.34,1.34,0,0,0,563.65,119.47Zm7.5-3.13H570l.59,1.39Z"/>
+                              <path className="cls-1" d="M562.76,119.47a.45.45,0,1,1-.43-.44A.43.43,0,0,1,562.76,119.47Z"/>
 
-                          {/* Rx section heading */}
-                          <div className="mt-7 space-y-3">
-                            <div className="flex items-center justify-between border-b border-[#eae6e1] pb-2">
-                              <h3 className="text-base sm:text-lg font-black text-brand-charcoal tracking-tight">Prescripción de Medicamentos</h3>
-                              <span className="text-[10px] sm:text-[11px] font-bold text-[#b57367] uppercase tracking-wider">Tratamiento e Indicaciones</span>
-                            </div>
+                              {/* Top-Right Contact Details (Cleanly right-aligned before the pill badge) */}
+                              <text className="cls-11" textAnchor="end" x="546" y="38">
+                                {headerClinicName}
+                              </text>
+                              {headerAddrLines.map((line, aIdx) => (
+                                <text key={'addr-' + aIdx} className="cls-9" textAnchor="end" x="546" y={49 + aIdx * 11}>
+                                  {line}
+                                </text>
+                              ))}
+                              <text className="cls-10" textAnchor="end" x="546" y="84">
+                                {headerPhone}
+                              </text>
+                              <text className="cls-10" textAnchor="end" x="546" y="119.5">
+                                M. P.: {headerLicense}
+                              </text>
 
-                            {/* Clean Medical Prescription Items List */}
-                            <div className="space-y-6 pt-2">
-                              {(() => {
-                                try {
-                                  const items: MedicationItem[] = JSON.parse(selectedPrescription.medications);
-                                  if (!items || items.length === 0) {
-                                    return <p className="text-xs text-slate-400 italic py-4 text-center">No se registraron medicamentos para esta receta.</p>;
-                                  }
-
-                                  return items.map((med, idx) => {
-                                    const line1 = formatMedicationLine1(med, idx);
-                                    const line2 = formatMedicationLine2(med);
-
-                                    return (
-                                      <div key={idx} className="space-y-1.5 text-left">
-                                        {/* Line 1: 1. Clobetasol propionato 0,05 % crema (Clopicar) # 1 tubo */}
-                                        <div className="font-bold text-slate-900 text-[14px] md:text-[15px] leading-snug tracking-tight">
-                                          {line1}
-                                        </div>
-
-                                        {/* Line 2: Aplicar una capa fina sobre las lesiones del brazo, 2 veces al día durante 3 semanas. */}
-                                        {line2 && (
-                                          <div className="text-slate-700 font-normal text-[13px] md:text-[13.5px] leading-relaxed pl-4 sm:pl-5">
-                                            {line2}
-                                          </div>
-                                        )}
-
-                                        {/* Additional custom notes if present and distinct */}
-                                        {med.notes && med.notes !== med.fullIndication && med.notes !== line2 && med.notes.trim() !== "" && (
-                                          <div className="text-[11.5px] text-[#b57367] italic pl-4 sm:pl-5">
-                                            Nota: {med.notes}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  });
-                                } catch (e) {
-                                  return (
-                                    <div className="py-4 text-center text-red-500 text-xs">Error al cargar tratamiento</div>
-                                  );
-                                }
-                              })()}
-                            </div>
-                          </div>
-
-                          {/* Non-pharmacological advice */}
-                          {selectedPrescription.instructions && (
-                            <div className="mt-6 bg-[#fbfaf8] border border-[#eae6e1] rounded-xl p-4 space-y-1">
-                              <h4 className="text-[10px] font-bold text-brand-rose uppercase tracking-wider flex items-center gap-1.5">
-                                <Activity className="h-3 w-3" />
-                                Indicaciones Generales y Cuidados
-                              </h4>
-                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{selectedPrescription.instructions}</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Bottom Segment: Signature & Social Footer */}
-                        <div className="space-y-6 mt-auto pt-8 shrink-0">
-                          {/* Doctor's Signature space */}
-                          <div className="flex flex-col items-center justify-center text-center">
-                            <div className="w-64 border-b border-slate-300 pb-1">
-                              {/* Empty space for handwriting signature */}
-                              <div className="h-12"></div>
-                            </div>
-                            <p className="text-xs font-bold text-brand-charcoal mt-2">Dra. {selectedPrescription.doctorName.replace(/dra\./gi, '').replace(/dr\./gi, '').trim()}</p>
-                            <p className="text-[10px] text-slate-400">Especialista en {doctorProfile?.specialty || 'Dermatología'}</p>
-                          </div>
-
-                          {/* Social Footer Banner bar */}
-                          <div className="bg-[#cc8576] text-white flex flex-row items-center justify-around py-2.5 px-4 rounded-xl text-[10px] -mx-6 -mb-6 sm:-mx-8 sm:-mb-8 md:-mx-12 md:-mb-12 print:-mx-0 print:-mb-0"
-                            style={{
-                              backgroundColor: "#cc8576",
-                              color: "#ffffff",
-                              display: "flex",
-                              flexDirection: "row",
-                              alignItems: "center",
-                              justifyContent: "space-around",
-                              padding: "10px 16px",
-                              borderRadius: "12px"
-                            }}>
-                            {/* TikTok */}
-                            <div className="flex items-center gap-1.5">
-                              <svg data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14.81 15.11" className="h-4 w-4 shrink-0 fill-white">
-                                <title>tiktokiconos</title>
-                                <g id="Capa_2" data-name="Capa 2">
-                                  <g id="Capa_1-2" data-name="Capa 1-2">
-                                    <path fill="#fff" d="M7.91,0H7.7a7.56,7.56,0,0,0-.19,15.11h.2A7.56,7.56,0,0,0,7.91,0ZM7.52,14.61A7.06,7.06,0,0,1,7.7.5h.19a7.06,7.06,0,0,1,4.67,12.18A6.94,6.94,0,0,1,7.52,14.61Z" transform="translate(-0.3)"/>
-                                    <path fill="#fff" d="M9.39,3.36H8V3.5L7.87,9.06a1.5,1.5,0,0,1,0,.3,1.28,1.28,0,0,1-2.52-.08,1.25,1.25,0,0,1,.94-1.35,4.45,4.45,0,0,1,.73,0V6.55a6.32,6.32,0,0,0-.87,0,2.62,2.62,0,0,0-2.22,3v0A2.66,2.66,0,0,0,7,11.71l.17,0a2.58,2.58,0,0,0,2-2.35c.05-1,.06-2,.08-3v-.2a3.47,3.47,0,0,0,2.12.78V5.54a2.11,2.11,0,0,1-1.48-.67A2.19,2.19,0,0,1,9.39,3.36Z" transform="translate(-0.3)"/>
+                              {/* 8. Watermark Butterfly Motif in Center Background */}
+                              <g id="Capa_2-4" data-name="Capa 2" className="cls-12">
+                                <g id="Capa_1-2-4" data-name="Capa 1-2">
+                                  <g id="Capa_2-2-3" data-name="Capa 2-2">
+                                    <g id="Capa_1-2-2-3" data-name="Capa 1-2-2">
+                                      <path className="cls-13" d="M69.38,700.19A12.38,12.38,0,0,0,72.26,699l2.6-1.54a43.1,43.1,0,0,0,4.8-3.26,114.3,114.3,0,0,0,9.12-7.3,150.24,150.24,0,0,0,15.56-15.75A164.67,164.67,0,0,0,127,637.28c3-5.86,5.67-11.81,8.07-18a94.29,94.29,0,0,0,3.26-9.6l1.54-4.71c.58-1.63,1.06-3.26,1.63-5,4.23-13.64,8.55-28.82,13.35-43.22s10.09-29.68,16.52-44.67a320.79,320.79,0,0,1,22.86-43.41A206.3,206.3,0,0,1,208.84,448a164.89,164.89,0,0,1,17.58-19.21,108.88,108.88,0,0,1,21.32-15.47,61,61,0,0,1,24.78-7.78,109,109,0,0,0-12.78,20,200.27,200.27,0,0,0-7.87,20.65c-4.9,13.83-8.84,28-12.68,42.36-7.68,28.81-15,57.62-24.59,87.78-1.15,3.75-2.4,7.49-3.65,11.34s-2.69,7.49-4,11.23-3,7.59-4.42,11.43-3.26,7.69-5,11.53c-1,1.92-1.83,3.94-2.79,5.86l-.77,1.44-.77,1.63c-.48,1.06-1.05,2-1.63,3.07s-2.21,3.94-3.36,6-2.4,3.94-3.65,5.86a149.58,149.58,0,0,1-17.38,21.42,126.43,126.43,0,0,1-45,30.06,100.55,100.55,0,0,1-25.93,6.15,76.1,76.1,0,0,1-13.16,0,51.18,51.18,0,0,1-6.63-1,18.34,18.34,0,0,1-3.17-.86,8.47,8.47,0,0,1-3.84-1.25"/>
+                                      <path className="cls-13" d="M285.87,567.36a29,29,0,0,0,2.69-2l2.5-2,4.8-4.23c3.07-2.88,6.05-5.86,8.93-8.74,5.67-6,10.95-11.91,15.94-18.06a129.36,129.36,0,0,0,13.07-19.69,200.86,200.86,0,0,0,9.6-21.13c2.79-7.2,5.28-14.5,7.78-21.61l1.73-5.09,1.63-4.89,3.36-10.57c2.31-7.2,4.81-14.79,7.49-22.47s5.58-15.56,8.55-23.54c6-15.84,12.49-31.88,20.27-48a308.37,308.37,0,0,1,27.37-46.39,232,232,0,0,1,17.48-21.22,171.38,171.38,0,0,1,20.75-18.35,111.45,111.45,0,0,1,49-22.09,178.19,178.19,0,0,0-30.25,39.28,281.2,281.2,0,0,0-19.21,42.94c-5.38,14.79-9.61,30-14.22,45.52s-8.55,31.22-13,47.35a327.08,327.08,0,0,1-17,49.37c-1.92,4.23-4,8.45-6.44,12.68-1.25,2.21-2.5,4.32-3.84,6.43s-1.35,2.31-2,3.27L400.74,497A179,179,0,0,1,382,518.28a245.87,245.87,0,0,1-21.32,18.44c-7.4,5.57-15.08,10.86-23,15.66A116.44,116.44,0,0,1,313,564.19a92.5,92.5,0,0,1-13.06,2.88c-2.3,0-4.51.58-6.82.67a33.25,33.25,0,0,1-6.91,0"/>
+                                      <path className="cls-13" d="M211.63,583.4a12.46,12.46,0,0,1,2.59,0h2.59l5,.58c3.17,0,6.43,1.25,9.6,1.92a138.29,138.29,0,0,1,17.87,5.76,146,146,0,0,1,30.44,16.62c4.52,3.26,8.84,6.72,13.06,10.37l6.05,5.67,3,2.88,3.27,3.26c8.55,8.65,17.57,18.06,27,27.28s19.21,18.34,30,27a275.8,275.8,0,0,0,33.91,24.2,180.21,180.21,0,0,0,19.21,9.61,143.71,143.71,0,0,0,20.74,7.39A90.31,90.31,0,0,0,458,729.29a52,52,0,0,0,21.61-4,91.74,91.74,0,0,1-17.38-9.6,159.79,159.79,0,0,1-14.5-12.11C438.1,695.1,430,686,421.49,676.66c-17-18.54-34-37.75-52.93-56.38-2.3-2.4-4.8-4.7-7.2-7s-4.9-4.61-7.39-6.91-5.19-4.61-7.88-6.82-5.19-4.61-7.78-6.54l-4.42-3.26-1.06-.87-1.15-.76-3-2-4.9-3.27c-1.64-1.05-3.36-2-5-2.88a117.9,117.9,0,0,0-21.42-9.6,107.43,107.43,0,0,0-45.52-4.8,87.22,87.22,0,0,0-21.9,5.57,63.78,63.78,0,0,0-9.6,5,35.33,35.33,0,0,0-4.52,3.27,20.19,20.19,0,0,0-2.11,1.92,9.29,9.29,0,0,0-1.63,2.21"/>
+                                    </g>
                                   </g>
                                 </g>
-                              </svg>
-                              <span className="font-medium">{doctorProfile?.tiktok || '@dra.karoltalavera'}</span>
-                            </div>
+                              </g>
 
-                            {/* Facebook */}
-                            <div className="flex items-center gap-1.5">
-                              <svg className="h-3.5 w-3.5 text-white shrink-0 fill-current" viewBox="0 0 24 24">
-                                <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/>
-                              </svg>
-                              <span className="font-medium">{doctorProfile?.facebook || 'Dra. Karol Talavera - Dermatóloga'}</span>
-                            </div>
+                              {/* 9. Patient Box */}
+                              <path className="cls-14" d="M18.13,152.11H402.78c2.41,0,4.37,1.3,4.37,2.9v26.12c0,1.61-2.42,2.91-4.37,2.91H18.13c-2.41,0-4.37-1.61-4.37-2.91V155C13.76,153.41,16.17,152.11,18.13,152.11Z"/>
+                              <text className="cls-15" transform="translate(25 170.5)">
+                                PACIENTE:
+                              </text>
+                              <text className="cls-10" transform="translate(90 170.5)">
+                                {selectedPrescription.patientName}
+                              </text>
 
-                            {/* Instagram */}
-                            <div className="flex items-center gap-1.5">
-                              <svg className="h-3.5 w-3.5 text-white shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                                <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-                                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-                                <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
-                              </svg>
-                              <span className="font-medium">{doctorProfile?.instagram || '@dermatista'}</span>
-                            </div>
+                              {/* 10. Age Box */}
+                              <path className="cls-14" d="M412.88,152.52H578c1,0,1.88,1.3,1.88,2.91v26.12c0,1.6-1,2.9-1.88,2.9H412.88c-1,0-1.88-1.6-1.88-2.9V155.43C411,153.82,412,152.52,412.88,152.52Z"/>
+                              <text className="cls-15" transform="translate(422 170.5)">
+                                EDAD:
+                              </text>
+                              <text className="cls-10" transform="translate(465 170.5)">
+                                {ageDisplay || '—'}
+                              </text>
+
+                              {/* 11. Diagnosis Box */}
+                              <path className="cls-14" d="M20.05,190.63H573.6c3.47,0,6.29,1.3,6.29,2.9v26.12c0,1.61-3.48,2.91-6.29,2.91H20.05c-3.47,0-6.29-1.61-6.29-2.91V193.53C13.76,191.93,17.23,190.63,20.05,190.63Z"/>
+                              <text className="cls-15" transform="translate(25 209)">
+                                DIAGNÓSTICO:
+                              </text>
+                              <text className="cls-10" transform="translate(115 209)">
+                                {selectedPrescription.diagnosis}
+                              </text>
+
+                              {/* 12. Dynamic Prescribed Medications List */}
+                              {(() => {
+                                if (parsedMeds.length === 0) {
+                                  return (
+                                    <text className="cls-20" transform="translate(18.13 260)" fill="#94a3b8" fontStyle="italic">
+                                      No se registraron medicamentos para esta receta.
+                                    </text>
+                                  );
+                                }
+
+                                let curY = 252;
+                                return (
+                                  <g>
+                                    {parsedMeds.map((med, idx) => {
+                                      const line1 = formatMedicationLine1(med, idx);
+                                      const line2 = formatMedicationLine2(med);
+                                      const line1Parts = wrapSvgText(line1, 62);
+                                      const line2Parts = wrapSvgText(line2, 68);
+                                      const hasNote = med.notes && med.notes !== med.fullIndication && med.notes !== line2 && med.notes.trim() !== "";
+                                      const noteParts = hasNote ? wrapSvgText(`Nota: ${med.notes}`, 68) : [];
+
+                                      const startItemY = curY;
+                                      curY += line1Parts.length * 15;
+                                      const line2StartY = curY;
+                                      curY += line2Parts.length * 14;
+                                      const noteStartY = curY;
+                                      if (hasNote) {
+                                        curY += noteParts.length * 13;
+                                      }
+                                      curY += 10; // margin between medications
+
+                                      return (
+                                        <g key={idx}>
+                                          {/* Line 1: Bold med name + dose + quantity */}
+                                          {line1Parts.map((l1, lIdx) => (
+                                            <text key={'l1-' + lIdx} className="cls-19" transform={`translate(18.13 ${startItemY + lIdx * 15})`}>
+                                              <tspan xmlSpace="preserve">{l1}</tspan>
+                                            </text>
+                                          ))}
+
+                                          {/* Line 2: Indicated administration instruction */}
+                                          {line2Parts.map((l2, lIdx) => (
+                                            <text key={'l2-' + lIdx} className="cls-20" transform={`translate(34 ${line2StartY + lIdx * 14})`}>
+                                              {l2}
+                                            </text>
+                                          ))}
+
+                                          {/* Optional Note */}
+                                          {hasNote && noteParts.map((n, nIdx) => (
+                                            <text key={'n-' + nIdx} className="cls-20" fill="#bf815e" fontStyle="italic" transform={`translate(34 ${noteStartY + nIdx * 13})`}>
+                                              {n}
+                                            </text>
+                                          ))}
+                                        </g>
+                                      );
+                                    })}
+
+                                    {/* Non-pharmacological Advice if present */}
+                                    {selectedPrescription.instructions && (
+                                      <g transform={`translate(0 ${curY + 6})`}>
+                                        <text className="cls-15" transform="translate(18.13 0)">
+                                          INDICACIONES GENERALES Y CUIDADOS:
+                                        </text>
+                                        {wrapSvgText(selectedPrescription.instructions, 68).map((instLine, iIdx) => (
+                                          <text key={'inst-' + iIdx} className="cls-20" transform={`translate(34 ${16 + iIdx * 14})`}>
+                                            {instLine}
+                                          </text>
+                                        ))}
+                                      </g>
+                                    )}
+                                  </g>
+                                );
+                              })()}
+
+                              {/* 13. Signature Line and Doctor Designation */}
+                              <line className="cls-17" x1="214.6" y1="677.45" x2="413.03" y2="677.45"/>
+                              <text className="cls-11" transform="translate(313.8 691.62)" textAnchor="middle">
+                                Dra. {selectedPrescription.doctorName.replace(/dra\./gi, '').replace(/dr\./gi, '').trim()}
+                              </text>
+                              <text className="cls-18" transform="translate(313.8 702.96)" textAnchor="middle">
+                                Especialista en {doctorProfile?.specialty || 'Dermatología'}
+                              </text>
+
+                              {/* 14. Date Box Above Footer */}
+                              <path className="cls-14" d="M20.48,722.18H574c3.48,0,6.29.84,6.29,1.87V740.8c0,1-3.47,1.87-6.29,1.87H20.48c-3.47,0-6.29-1-6.29-1.87V724.05C14.19,723,17.67,722.18,20.48,722.18Z"/>
+                              <text className="cls-15" transform="translate(25 735.5)">
+                                FECHA:
+                              </text>
+                              <text className="cls-10" transform="translate(75 735.5)">
+                                {dateFormatted}
+                              </text>
+
+                              {/* 15. Footer Bar with Social Icons and Handles */}
+                              {/* TikTok */}
+                              <path className="cls-1" d="M21.28,769.5a7.11,7.11,0,1,0,7.11,7.1A7.11,7.11,0,0,0,21.28,769.5Zm3.68,7a3.46,3.46,0,0,1-2.09-.77v.2c0,1,0,2-.08,2.94a2.49,2.49,0,0,1-2,2.31l-.16,0a2.61,2.61,0,0,1-3-2.12v0a2.58,2.58,0,0,1,2.18-2.92h.85v1.36a4.21,4.21,0,0,0-.71,0,1.23,1.23,0,0,0-.93,1.33,1.26,1.26,0,0,0,2.48.07,1.4,1.4,0,0,0,0-.29l.16-5.46V773H23a2.16,2.16,0,0,0,.51,1.48,2.11,2.11,0,0,0,1.46.66Z"/>
+                              <text className="cls-16" transform="translate(30.7 779.53)">
+                                {doctorProfile?.tiktok || '@dra.karoltalavera'}
+                              </text>
+
+                              {/* Facebook */}
+                              <path className="cls-1" d="M233.45,783.7v-5.11h1.38l.32-2h-2.08l0,0c0-.49,0-1,0-1.47a1,1,0,0,1,1.07-.92h1.32v-1.76c-.28,0-.57-.07-.86-.09a4.94,4.94,0,0,0-1.67.07,2.35,2.35,0,0,0-1.82,2.06c0,.38-.05.78-.06,1.17s0,.63,0,1h-1.6v2H231v5.12l-.65-.13a7.11,7.11,0,0,1-3.4-2,7.19,7.19,0,0,1-.15-9.8,6.69,6.69,0,0,1,4-2.21,7.1,7.1,0,0,1,8.29,5.77,7,7,0,0,1-1.18,5.38,7.17,7.17,0,0,1-4.32,2.92Z"/>
+                              <text className="cls-16" transform="translate(241.38 778.92)">
+                                {doctorProfile?.facebook || 'Dra. Karol Talavera - Dermatóloga'}
+                              </text>
+
+                              {/* Instagram */}
+                              <path className="cls-1" d="M517.77,769.24a7.36,7.36,0,1,1-7.38,7.28A7.36,7.36,0,0,1,517.77,769.24Zm-4.55,7.36v1.64a4.44,4.44,0,0,0,0,.63,2.35,2.35,0,0,0,1.39,2,3.15,3.15,0,0,0,1.32.27h3.59a3.07,3.07,0,0,0,1.39-.31,2.39,2.39,0,0,0,1.34-2.21c0-1.22,0-2.44,0-3.66a3.81,3.81,0,0,0-.07-.75,2.32,2.32,0,0,0-1.5-1.86,3.52,3.52,0,0,0-1.2-.2h-3.34a5.24,5.24,0,0,0-.79,0,2.33,2.33,0,0,0-2,1.54,3,3,0,0,0-.2,1.11Z"/>
+                              <path className="cls-1" d="M517.76,780.25c-.64,0-1.28,0-1.91,0a1.68,1.68,0,0,1-1.55-.83,2,2,0,0,1-.25-.92c0-1.27,0-2.54,0-3.8a1.59,1.59,0,0,1,1-1.58,2.42,2.42,0,0,1,.8-.16c1.26,0,2.52,0,3.78,0a1.67,1.67,0,0,1,1.6.88,1.94,1.94,0,0,1,.21.85c0,1.27,0,2.55,0,3.82a1.64,1.64,0,0,1-1.56,1.72l-.17,0Zm0-6a2.39,2.39,0,1,0,2.39,2.39A2.38,2.38,0,0,0,517.76,774.22Zm2.4.47a.46.46,0,0,0,.48-.46.47.47,0,0,0-.47-.48.46.46,0,0,0-.47.46A.45.45,0,0,0,520.16,774.69Z"/>
+                              <path className="cls-1" d="M519.31,776.6a1.55,1.55,0,1,1-1.56-1.55A1.56,1.56,0,0,1,519.31,776.6Z"/>
+                              <text className="cls-16" transform="translate(528.7 778.99)">
+                                {doctorProfile?.instagram || '@dermatista'}
+                              </text>
+                            </svg>
                           </div>
-                        </div>
-                      </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ) : (
@@ -4146,38 +4010,83 @@ export default function App() {
                       </button>
 
                       {catalogMedications.length > 0 && (
-                        <div className="flex items-center gap-1 text-xs text-slate-500">
-                          <span className="font-semibold text-[10.5px] hidden sm:inline">⚡ Catálogo:</span>
-                          <select 
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val) {
-                                const found = catalogMedications.find(m => m.id === val);
-                                if (found) {
-                                  setMedForm({
-                                    genericName: found.genericName || found.name || '',
-                                    commercialName: found.commercialName || '',
-                                    concentration: found.concentration || found.dose || '',
-                                    pharmaceuticalForm: found.pharmaceuticalForm || 'Crema',
-                                    quantity: found.quantity || '1 tubo',
-                                    baseInstruction: found.baseInstruction || 'Capa fina sobre las lesiones',
-                                    route: found.route || 'Tópica',
-                                    frequency: found.frequency || '2 veces al día',
-                                    applicationSite: found.applicationSite || 'Lesiones de brazo',
-                                    treatmentPeriod: found.treatmentPeriod || found.duration || '3 semanas',
-                                    customNotes: found.customNotes || found.notes || ''
-                                  });
+                        <div ref={modalCatalogSearchRef} className="relative w-full sm:w-64">
+                          <div className="relative flex items-center">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={modalCatalogSearch}
+                              onChange={(e) => {
+                                setModalCatalogSearch(e.target.value);
+                                setIsModalCatalogDropdownOpen(true);
+                              }}
+                              onFocus={() => setIsModalCatalogDropdownOpen(true)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (filteredModalCatalogMeds.length > 0) {
+                                    handleSelectModalCatalogMed(filteredModalCatalogMeds[0]);
+                                  }
+                                } else if (e.key === 'Escape') {
+                                  setIsModalCatalogDropdownOpen(false);
                                 }
-                              }
-                              e.target.value = "";
-                            }}
-                            className="text-[11px] px-2 py-1 bg-brand-linen/30 border border-brand-border rounded-lg outline-none cursor-pointer max-w-[200px] font-medium"
-                          >
-                            <option value="">-- Cargar medicamento --</option>
-                            {catalogMedications.map(m => (
-                              <option key={m.id} value={m.id}>[{m.category.substring(0, 7)}.] {m.name}</option>
-                            ))}
-                          </select>
+                              }}
+                              placeholder="Buscar medicamento en catálogo..."
+                              className="w-full pl-8 pr-7 py-1 text-xs bg-brand-linen/40 hover:bg-white focus:bg-white border border-brand-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-rose/20 focus:border-brand-rose font-medium transition placeholder:text-slate-400"
+                            />
+                            {modalCatalogSearch && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setModalCatalogSearch('');
+                                  setIsModalCatalogDropdownOpen(false);
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold px-0.5 cursor-pointer"
+                                title="Borrar búsqueda"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Lista desplegable de medicamentos que coinciden solo con el nombre */}
+                          {isModalCatalogDropdownOpen && (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-brand-border rounded-xl shadow-xl z-50 max-h-56 overflow-y-auto py-1 divide-y divide-slate-100">
+                              {filteredModalCatalogMeds.length === 0 ? (
+                                <div className="px-3 py-2 text-[11px] text-slate-400 italic text-center">
+                                  No se encontró ningún medicamento en el catálogo
+                                </div>
+                              ) : (
+                                filteredModalCatalogMeds.map((m) => {
+                                  const displayName = m.genericName || m.name;
+                                  return (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => handleSelectModalCatalogMed(m)}
+                                      className="w-full text-left px-3 py-2 hover:bg-brand-linen/60 transition cursor-pointer flex flex-col gap-0.5 group"
+                                    >
+                                      <div className="flex items-center justify-between gap-1.5">
+                                        <span className="text-xs font-bold text-slate-800 group-hover:text-brand-rose truncate">
+                                          {displayName}
+                                        </span>
+                                        {m.concentration && (
+                                          <span className="text-[10px] text-slate-400 shrink-0 font-medium">
+                                            {m.concentration}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {m.commercialName && m.commercialName !== displayName && (
+                                        <span className="text-[10.5px] text-slate-500 font-medium">
+                                          Comercial: {m.commercialName}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
