@@ -32,13 +32,7 @@ import {
   Edit3,
   Cloud,
   ChevronDown,
-  Download,
-  Store,
-  ExternalLink,
-  Check,
-  ShoppingBag,
-  Zap,
-  DollarSign
+  Download
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
 import { toJpeg, toPng } from 'html-to-image';
@@ -146,23 +140,6 @@ interface CatalogMedication {
   category: string;
   createdAt: string;
   createdBy: string;
-}
-
-export interface FarmacorpProduct {
-  id: string;
-  title: string;
-  vendor: string;
-  price: number;
-  priceFormatted: string;
-  rawPrice: string;
-  compareAtPrice?: string;
-  url: string;
-  image: string;
-  available: boolean;
-  bodyHtml: string;
-  bodyText: string;
-  guessedForm: string;
-  guessedDose: string;
 }
 
 export interface CustomPresets {
@@ -964,7 +941,7 @@ export default function App() {
   const [demoLoading, setDemoLoading] = useState(false);
 
   // App state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'prescriptions' | 'settings' | 'medications' | 'farmacorp'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'prescriptions' | 'settings' | 'medications'>('dashboard');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [catalogMedications, setCatalogMedications] = useState<CatalogMedication[]>(() => {
@@ -1047,147 +1024,8 @@ export default function App() {
     if (!isPrescriptionModalOpen) {
       setModalCatalogSearch('');
       setIsModalCatalogDropdownOpen(false);
-      setModalFarmacorpQuery('');
-      setModalFarmacorpResults([]);
     }
   }, [isPrescriptionModalOpen]);
-
-  // Farmacorp Bolivia Live Integration State
-  const [farmacorpProducts, setFarmacorpProducts] = useState<FarmacorpProduct[]>([]);
-  const [farmacorpLoading, setFarmacorpLoading] = useState(false);
-  const [farmacorpSearch, setFarmacorpSearch] = useState('');
-  const [farmacorpCategory, setFarmacorpCategory] = useState('dermatologia');
-  const [farmacorpStatus, setFarmacorpStatus] = useState<{ connected: boolean; latencyMs?: number; store?: string } | null>({ connected: true, store: 'Farmacorp Bolivia' });
-  const [farmacorpSavedId, setFarmacorpSavedId] = useState<string | null>(null);
-  const [expandedFarmacorpId, setExpandedFarmacorpId] = useState<string | null>(null);
-
-  // Modal search mode toggle (Mis Fórmulas vs Farmacorp En Vivo)
-  const [modalSearchMode, setModalSearchMode] = useState<'catalog' | 'farmacorp'>('catalog');
-  const [modalFarmacorpQuery, setModalFarmacorpQuery] = useState('');
-  const [modalFarmacorpResults, setModalFarmacorpResults] = useState<FarmacorpProduct[]>([]);
-  const [modalFarmacorpLoading, setModalFarmacorpLoading] = useState(false);
-
-  async function loadFarmacorpProducts(queryStr?: string) {
-    setFarmacorpLoading(true);
-    try {
-      const q = (queryStr !== undefined ? queryStr : (farmacorpSearch || farmacorpCategory)).trim() || 'dermatologia';
-      const res = await fetch(`/api/farmacorp/search?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.products)) {
-        setFarmacorpProducts(data.products);
-      }
-    } catch (err) {
-      console.error("Error fetching Farmacorp products:", err);
-    } finally {
-      setFarmacorpLoading(false);
-    }
-  }
-
-  async function checkFarmacorpStatus() {
-    try {
-      const res = await fetch('/api/farmacorp/status');
-      const data = await res.json();
-      setFarmacorpStatus(data);
-    } catch (err) {
-      setFarmacorpStatus({ connected: false });
-    }
-  }
-
-  // Load Farmacorp status & initial products on tab activation
-  useEffect(() => {
-    if (activeTab === 'farmacorp') {
-      checkFarmacorpStatus();
-      if (farmacorpProducts.length === 0) {
-        loadFarmacorpProducts('dermatologia');
-      }
-    }
-  }, [activeTab]);
-
-  // Debounced search for Farmacorp main tab
-  useEffect(() => {
-    if (activeTab !== 'farmacorp') return;
-    const timer = setTimeout(() => {
-      loadFarmacorpProducts(farmacorpSearch || farmacorpCategory);
-    }, 450);
-    return () => clearTimeout(timer);
-  }, [farmacorpSearch, farmacorpCategory]);
-
-  // Modal Farmacorp search debounced
-  useEffect(() => {
-    if (!isPrescriptionModalOpen || modalSearchMode !== 'farmacorp') return;
-    if (!modalFarmacorpQuery.trim()) {
-      setModalFarmacorpResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      setModalFarmacorpLoading(true);
-      try {
-        const res = await fetch(`/api/farmacorp/search?q=${encodeURIComponent(modalFarmacorpQuery.trim())}`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.products)) {
-          setModalFarmacorpResults(data.products);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setModalFarmacorpLoading(false);
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [modalFarmacorpQuery, modalSearchMode, isPrescriptionModalOpen]);
-
-  function handlePrescribeFarmacorpProduct(product: FarmacorpProduct) {
-    setMedForm({
-      genericName: product.vendor || product.title,
-      commercialName: product.title,
-      concentration: product.guessedDose || '',
-      pharmaceuticalForm: product.guessedForm || 'Crema',
-      quantity: '1 unidad',
-      baseInstruction: 'Capa fina sobre las lesiones',
-      route: product.guessedForm === 'Comprimidos' ? 'Oral' : 'Tópica',
-      frequency: '2 veces al día',
-      applicationSite: product.guessedForm === 'Comprimidos' ? 'Vía oral con abundante agua' : 'Área afectada',
-      treatmentPeriod: '2 a 3 semanas',
-      customNotes: `Farmacorp: ${product.priceFormatted}`
-    });
-    setIsPrescriptionModalOpen(true);
-  }
-
-  async function handleSaveFarmacorpToCatalog(product: FarmacorpProduct) {
-    if (!user) return;
-    const newMed: Omit<CatalogMedication, 'id'> = {
-      category: 'Medicamento Comercial',
-      genericName: product.vendor || product.title,
-      commercialName: product.title,
-      concentration: product.guessedDose || '',
-      pharmaceuticalForm: product.guessedForm || 'Crema',
-      quantity: '1 unidad',
-      baseInstruction: 'Capa fina sobre las lesiones',
-      route: product.guessedForm === 'Comprimidos' ? 'Oral' : 'Tópica',
-      frequency: '2 veces al día',
-      applicationSite: product.guessedForm === 'Comprimidos' ? 'Vía oral' : 'Área afectada',
-      treatmentPeriod: '2 a 3 semanas',
-      customNotes: `Farmacorp: ${product.priceFormatted}`,
-      createdBy: user.uid,
-      createdAt: new Date().toISOString()
-    };
-
-    try {
-      const docRef = await addDoc(collection(db, 'medications_catalog'), newMed);
-      const createdWithId = { ...newMed, id: docRef.id };
-      setCatalogMedications(prev => [createdWithId, ...prev]);
-      await addKvCatalogMed(createdWithId);
-      setFarmacorpSavedId(product.id);
-      setTimeout(() => setFarmacorpSavedId(null), 3000);
-    } catch (e) {
-      console.error("Error saving Farmacorp to catalog:", e);
-      const localId = `farmacorp_${Date.now()}`;
-      const fallbackItem = { ...newMed, id: localId };
-      setCatalogMedications(prev => [fallbackItem, ...prev]);
-      setFarmacorpSavedId(product.id);
-      setTimeout(() => setFarmacorpSavedId(null), 3000);
-    }
-  }
 
   const filteredModalCatalogMeds = useMemo(() => {
     const q = modalCatalogSearch.trim().toLowerCase();
@@ -2232,10 +2070,10 @@ export default function App() {
 
   const filteredCatalogMedications = useMemo(() => {
     return catalogMedications.filter(m => {
-      const search = (catalogSearch || '').toLowerCase();
+      const search = catalogSearch.toLowerCase();
       const matchesSearch = 
-        (m.name || '').toLowerCase().includes(search) || 
-        (m.category || '').toLowerCase().includes(search) || 
+        m.name.toLowerCase().includes(search) || 
+        m.category.toLowerCase().includes(search) || 
         (m.genericName && m.genericName.toLowerCase().includes(search)) ||
         (m.commercialName && m.commercialName.toLowerCase().includes(search)) ||
         (m.notes && m.notes.toLowerCase().includes(search));
@@ -2372,14 +2210,6 @@ export default function App() {
             <Pill className="h-5 w-5" />
           </button>
           <button 
-            onClick={() => setActiveTab('farmacorp')}
-            className={`p-2 rounded-lg transition relative ${activeTab === 'farmacorp' ? 'bg-brand-linen text-emerald-700' : 'text-slate-500'}`}
-            title="Catálogo Farmacorp Bolivia (En Vivo)"
-          >
-            <Store className="h-5 w-5 text-emerald-600" />
-            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse"></span>
-          </button>
-          <button 
             onClick={() => setActiveTab('settings')}
             className={`p-2 rounded-lg transition ${activeTab === 'settings' ? 'bg-brand-linen text-brand-rose' : 'text-slate-500'}`}
             title="Ajustes"
@@ -2457,18 +2287,6 @@ export default function App() {
                 {catalogMedications.length}
               </span>
             )}
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('farmacorp')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition cursor-pointer relative ${activeTab === 'farmacorp' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'text-slate-600 hover:bg-brand-linen/60'}`}
-          >
-            <Store className="h-5 w-5 shrink-0 text-emerald-600" />
-            <span>Catálogo Farmacorp</span>
-            <span className="ml-auto bg-emerald-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-2xs">
-              <span className="h-1.5 w-1.5 bg-white rounded-full animate-ping"></span>
-              En Vivo
-            </span>
           </button>
 
           <button 
@@ -3495,257 +3313,6 @@ export default function App() {
                   </button>
                 </div>
               </form>
-            </div>
-          )}
-
-          {/* TAB: FARMACORP LIVE CATALOG INTEGRATION */}
-          {activeTab === 'farmacorp' && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              {/* Header banner */}
-              <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-800 rounded-2xl p-6 lg:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/20 via-transparent to-transparent pointer-events-none"></div>
-                <div className="relative z-10 space-y-2">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/30 border border-emerald-400/40 rounded-full text-emerald-200 text-xs font-bold">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span>Conexión en Vivo con Farmacorp Bolivia</span>
-                  </div>
-                  <h1 className="text-2xl lg:text-3xl font-black tracking-tight">Catálogo Farmacorp (Bolivia)</h1>
-                  <p className="text-emerald-100 text-sm max-w-2xl leading-relaxed">
-                    Consulta stock, precios en Bolivianos (Bs.), laboratorios y descripciones de productos directamente desde la API oficial de Farmacorp para agregarlos a tus recetas médicas en tiempo real.
-                  </p>
-                </div>
-
-                <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-                  <div className="bg-emerald-950/60 border border-emerald-700/50 rounded-xl p-3.5 text-center min-w-[160px]">
-                    <span className="text-[10px] text-emerald-300 uppercase tracking-wider block font-bold">Estado de Conexión</span>
-                    <div className="flex items-center justify-center gap-1.5 mt-1 font-bold text-sm text-emerald-100">
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
-                      <span>{farmacorpStatus?.connected ? 'En Línea (200 OK)' : 'Conectando...'}</span>
-                    </div>
-                    {farmacorpStatus?.latencyMs && (
-                      <span className="text-[10px] text-emerald-400 block mt-0.5">Latencia: {farmacorpStatus.latencyMs}ms</span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      checkFarmacorpStatus();
-                      loadFarmacorpProducts(farmacorpSearch || farmacorpCategory);
-                    }}
-                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-emerald-950/40"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${farmacorpLoading ? 'animate-spin' : ''}`} />
-                    <span>Actualizar Catálogo</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Search & Categories Bar */}
-              <div className="bg-white p-4 lg:p-6 rounded-2xl border border-brand-border shadow-xs space-y-4">
-                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                  <div className="relative flex-1 w-full">
-                    <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={farmacorpSearch}
-                      onChange={(e) => setFarmacorpSearch(e.target.value)}
-                      placeholder="Buscar por medicamento, principio activo, marca o producto (ej. CeraVe, Protector solar, Paracetamol, Clobetasol)..."
-                      className="w-full pl-10 pr-4 py-2.5 bg-brand-linen/30 focus:bg-white border border-brand-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium transition"
-                    />
-                    {farmacorpSearch && (
-                      <button
-                        type="button"
-                        onClick={() => setFarmacorpSearch('')}
-                        className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-                    {['dermatologia', 'protector solar', 'crema', 'cerave', 'eucerin', 'analgesico', 'vitamina'].map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => {
-                          setFarmacorpCategory(cat);
-                          setFarmacorpSearch('');
-                          loadFarmacorpProducts(cat);
-                        }}
-                        className={`text-xs px-3.5 py-2 rounded-xl border font-semibold transition cursor-pointer whitespace-nowrap capitalize ${
-                          farmacorpCategory === cat && !farmacorpSearch
-                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                            : 'bg-white text-slate-700 border-brand-border hover:bg-brand-linen/50'
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Results Grid */}
-              {farmacorpLoading && farmacorpProducts.length === 0 ? (
-                <div className="text-center py-28 bg-white rounded-2xl border border-brand-border shadow-xs flex flex-col items-center justify-center space-y-4">
-                  <Loader2 className="h-10 w-10 text-emerald-600 animate-spin" />
-                  <div>
-                    <p className="font-bold text-slate-800 text-base">Consultando catálogo en vivo de Farmacorp Bolivia...</p>
-                    <p className="text-xs text-slate-500 mt-1">Conectando de forma segura con la pasarela de productos.</p>
-                  </div>
-                </div>
-              ) : farmacorpProducts.length === 0 ? (
-                <div className="text-center py-24 bg-white rounded-2xl border border-brand-border shadow-xs flex flex-col items-center justify-center space-y-3">
-                  <Store className="h-12 w-12 text-slate-300" />
-                  <div>
-                    <p className="font-bold text-slate-700 text-base">No se encontraron productos con ese término</p>
-                    <p className="text-xs text-slate-500 max-w-sm mx-auto mt-0.5">Prueba buscando otro principio activo o nombre comercial (ej. Protector solar, CeraVe, Ibuprofeno).</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      Mostrando {farmacorpProducts.length} productos en tiempo real desde Farmacorp Bolivia
-                    </span>
-                    <span className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                      ✓ Precios y Disponibilidad Verificados
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {farmacorpProducts.map((product) => {
-                      const isExpanded = expandedFarmacorpId === product.id;
-                      const isJustSaved = farmacorpSavedId === product.id;
-
-                      return (
-                        <div
-                          key={product.id}
-                          className="bg-white rounded-2xl border border-brand-border shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between overflow-hidden group"
-                        >
-                          <div>
-                            {/* Product Header / Image */}
-                            <div className="relative h-48 bg-slate-50 border-b border-brand-border/60 p-4 flex items-center justify-center overflow-hidden">
-                              <img
-                                src={product.image}
-                                alt={product.title}
-                                className="h-full w-full object-contain object-center group-hover:scale-105 transition-transform duration-300"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://farmacorp.com/cdn/shop/files/logo-farmacorp.png';
-                                }}
-                              />
-                              <div className="absolute top-3 left-3 flex flex-col gap-1 items-start">
-                                <span className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1">
-                                  <Store className="h-3 w-3" />
-                                  <span>Farmacorp</span>
-                                </span>
-                                {product.available ? (
-                                  <span className="bg-emerald-50 text-emerald-800 font-bold text-[9.5px] px-2 py-0.5 rounded-md border border-emerald-200">
-                                    En Stock
-                                  </span>
-                                ) : (
-                                  <span className="bg-amber-50 text-amber-800 font-bold text-[9.5px] px-2 py-0.5 rounded-md border border-amber-200">
-                                    Agotado
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-xl border border-brand-border shadow-xs text-right">
-                                <span className="text-[10px] text-slate-400 block font-semibold leading-none">Precio</span>
-                                <span className="text-sm font-black text-emerald-700">{product.priceFormatted}</span>
-                              </div>
-                            </div>
-
-                            {/* Product Details */}
-                            <div className="p-5 space-y-3">
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">{product.vendor}</span>
-                                <h3 className="font-bold text-brand-charcoal text-sm leading-snug line-clamp-2" title={product.title}>
-                                  {product.title}
-                                </h3>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                <span className="text-[10px] font-semibold bg-brand-linen text-slate-700 px-2 py-0.5 rounded-md border border-brand-border">
-                                  Forma: {product.guessedForm}
-                                </span>
-                                {product.guessedDose && (
-                                  <span className="text-[10px] font-semibold bg-sky-50 text-sky-800 px-2 py-0.5 rounded-md border border-sky-200">
-                                    Dosis: {product.guessedDose}
-                                  </span>
-                                )}
-                              </div>
-
-                              {product.bodyText && (
-                                <p className={`text-xs text-slate-600 leading-relaxed ${isExpanded ? '' : 'line-clamp-2'}`}>
-                                  {product.bodyText}
-                                </p>
-                              )}
-
-                              {product.bodyText && product.bodyText.length > 100 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedFarmacorpId(isExpanded ? null : product.id)}
-                                  className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer pt-0.5"
-                                >
-                                  {isExpanded ? 'Ver menos' : 'Leer descripción completa...'}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Card Footer Actions */}
-                          <div className="p-4 bg-brand-linen/20 border-t border-brand-border/60 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handlePrescribeFarmacorpProduct(product)}
-                              className="flex-1 py-2.5 bg-brand-rose hover:bg-brand-rose/90 text-white font-bold rounded-xl text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
-                              title="Usar este producto de Farmacorp directamente en una nueva receta médica"
-                            >
-                              <FileText className="h-3.5 w-3.5" />
-                              <span>Recetar</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleSaveFarmacorpToCatalog(product)}
-                              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                                isJustSaved
-                                  ? 'bg-emerald-600 text-white shadow-sm'
-                                  : 'bg-white hover:bg-emerald-50 text-slate-700 border border-brand-border hover:border-emerald-300 hover:text-emerald-700'
-                              }`}
-                              title="Guardar este medicamento en tu catálogo personal de la nube"
-                            >
-                              {isJustSaved ? (
-                                <>
-                                  <Check className="h-3.5 w-3.5" />
-                                  <span>¡Guardado!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Plus className="h-3.5 w-3.5" />
-                                  <span>Guardar</span>
-                                </>
-                              )}
-                            </button>
-
-                            <a
-                              href={product.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-2.5 bg-white hover:bg-slate-100 border border-brand-border text-slate-500 rounded-xl transition"
-                              title="Ver producto en la web oficial de Farmacorp"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
