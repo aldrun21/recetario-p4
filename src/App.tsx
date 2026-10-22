@@ -32,7 +32,13 @@ import {
   Edit3,
   Cloud,
   ChevronDown,
-  Download
+  Download,
+  Store,
+  ExternalLink,
+  Check,
+  ShoppingBag,
+  Zap,
+  DollarSign
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
 import { toJpeg, toPng } from 'html-to-image';
@@ -140,6 +146,23 @@ interface CatalogMedication {
   category: string;
   createdAt: string;
   createdBy: string;
+}
+
+export interface FarmacorpProduct {
+  id: string;
+  title: string;
+  vendor: string;
+  price: number;
+  priceFormatted: string;
+  rawPrice: string;
+  compareAtPrice?: string;
+  url: string;
+  image: string;
+  available: boolean;
+  bodyHtml: string;
+  bodyText: string;
+  guessedForm: string;
+  guessedDose: string;
 }
 
 export interface CustomPresets {
@@ -941,7 +964,7 @@ export default function App() {
   const [demoLoading, setDemoLoading] = useState(false);
 
   // App state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'prescriptions' | 'settings' | 'medications'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'prescriptions' | 'settings' | 'medications' | 'farmacorp'>('dashboard');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [catalogMedications, setCatalogMedications] = useState<CatalogMedication[]>(() => {
@@ -1024,8 +1047,147 @@ export default function App() {
     if (!isPrescriptionModalOpen) {
       setModalCatalogSearch('');
       setIsModalCatalogDropdownOpen(false);
+      setModalFarmacorpQuery('');
+      setModalFarmacorpResults([]);
     }
   }, [isPrescriptionModalOpen]);
+
+  // Farmacorp Bolivia Live Integration State
+  const [farmacorpProducts, setFarmacorpProducts] = useState<FarmacorpProduct[]>([]);
+  const [farmacorpLoading, setFarmacorpLoading] = useState(false);
+  const [farmacorpSearch, setFarmacorpSearch] = useState('');
+  const [farmacorpCategory, setFarmacorpCategory] = useState('dermatologia');
+  const [farmacorpStatus, setFarmacorpStatus] = useState<{ connected: boolean; latencyMs?: number; store?: string } | null>(null);
+  const [farmacorpSavedId, setFarmacorpSavedId] = useState<string | null>(null);
+  const [expandedFarmacorpId, setExpandedFarmacorpId] = useState<string | null>(null);
+
+  // Modal search mode toggle (Mis Fórmulas vs Farmacorp En Vivo)
+  const [modalSearchMode, setModalSearchMode] = useState<'catalog' | 'farmacorp'>('catalog');
+  const [modalFarmacorpQuery, setModalFarmacorpQuery] = useState('');
+  const [modalFarmacorpResults, setModalFarmacorpResults] = useState<FarmacorpProduct[]>([]);
+  const [modalFarmacorpLoading, setModalFarmacorpLoading] = useState(false);
+
+  async function loadFarmacorpProducts(queryStr?: string) {
+    setFarmacorpLoading(true);
+    try {
+      const q = (queryStr !== undefined ? queryStr : (farmacorpSearch || farmacorpCategory)).trim() || 'dermatologia';
+      const res = await fetch(`/api/farmacorp/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.products)) {
+        setFarmacorpProducts(data.products);
+      }
+    } catch (err) {
+      console.error("Error fetching Farmacorp products:", err);
+    } finally {
+      setFarmacorpLoading(false);
+    }
+  }
+
+  async function checkFarmacorpStatus() {
+    try {
+      const res = await fetch('/api/farmacorp/status');
+      const data = await res.json();
+      setFarmacorpStatus(data);
+    } catch (err) {
+      setFarmacorpStatus({ connected: false });
+    }
+  }
+
+  // Load Farmacorp status & initial products on tab activation
+  useEffect(() => {
+    if (activeTab === 'farmacorp') {
+      checkFarmacorpStatus();
+      if (farmacorpProducts.length === 0) {
+        loadFarmacorpProducts('dermatologia');
+      }
+    }
+  }, [activeTab]);
+
+  // Debounced search for Farmacorp main tab
+  useEffect(() => {
+    if (activeTab !== 'farmacorp') return;
+    const timer = setTimeout(() => {
+      loadFarmacorpProducts(farmacorpSearch || farmacorpCategory);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [farmacorpSearch, farmacorpCategory]);
+
+  // Modal Farmacorp search debounced
+  useEffect(() => {
+    if (!isPrescriptionModalOpen || modalSearchMode !== 'farmacorp') return;
+    if (!modalFarmacorpQuery.trim()) {
+      setModalFarmacorpResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setModalFarmacorpLoading(true);
+      try {
+        const res = await fetch(`/api/farmacorp/search?q=${encodeURIComponent(modalFarmacorpQuery.trim())}`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.products)) {
+          setModalFarmacorpResults(data.products);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setModalFarmacorpLoading(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [modalFarmacorpQuery, modalSearchMode, isPrescriptionModalOpen]);
+
+  function handlePrescribeFarmacorpProduct(product: FarmacorpProduct) {
+    setMedForm({
+      genericName: product.vendor || product.title,
+      commercialName: product.title,
+      concentration: product.guessedDose || '',
+      pharmaceuticalForm: product.guessedForm || 'Crema',
+      quantity: '1 unidad',
+      baseInstruction: 'Capa fina sobre las lesiones',
+      route: product.guessedForm === 'Comprimidos' ? 'Oral' : 'Tópica',
+      frequency: '2 veces al día',
+      applicationSite: product.guessedForm === 'Comprimidos' ? 'Vía oral con abundante agua' : 'Área afectada',
+      treatmentPeriod: '2 a 3 semanas',
+      customNotes: `Farmacorp: ${product.priceFormatted}`
+    });
+    setIsPrescriptionModalOpen(true);
+  }
+
+  async function handleSaveFarmacorpToCatalog(product: FarmacorpProduct) {
+    if (!user) return;
+    const newMed: Omit<CatalogMedication, 'id'> = {
+      category: 'Medicamento Comercial',
+      genericName: product.vendor || product.title,
+      commercialName: product.title,
+      concentration: product.guessedDose || '',
+      pharmaceuticalForm: product.guessedForm || 'Crema',
+      quantity: '1 unidad',
+      baseInstruction: 'Capa fina sobre las lesiones',
+      route: product.guessedForm === 'Comprimidos' ? 'Oral' : 'Tópica',
+      frequency: '2 veces al día',
+      applicationSite: product.guessedForm === 'Comprimidos' ? 'Vía oral' : 'Área afectada',
+      treatmentPeriod: '2 a 3 semanas',
+      customNotes: `Farmacorp: ${product.priceFormatted}`,
+      createdBy: user.uid,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, 'medications_catalog'), newMed);
+      const createdWithId = { ...newMed, id: docRef.id };
+      setCatalogMedications(prev => [createdWithId, ...prev]);
+      await addKvCatalogMed(createdWithId);
+      setFarmacorpSavedId(product.id);
+      setTimeout(() => setFarmacorpSavedId(null), 3000);
+    } catch (e) {
+      console.error("Error saving Farmacorp to catalog:", e);
+      const localId = `farmacorp_${Date.now()}`;
+      const fallbackItem = { ...newMed, id: localId };
+      setCatalogMedications(prev => [fallbackItem, ...prev]);
+      setFarmacorpSavedId(product.id);
+      setTimeout(() => setFarmacorpSavedId(null), 3000);
+    }
+  }
 
   const filteredModalCatalogMeds = useMemo(() => {
     const q = modalCatalogSearch.trim().toLowerCase();
@@ -2070,10 +2232,10 @@ export default function App() {
 
   const filteredCatalogMedications = useMemo(() => {
     return catalogMedications.filter(m => {
-      const search = catalogSearch.toLowerCase();
+      const search = (catalogSearch || '').toLowerCase();
       const matchesSearch = 
-        m.name.toLowerCase().includes(search) || 
-        m.category.toLowerCase().includes(search) || 
+        (m.name || '').toLowerCase().includes(search) || 
+        (m.category || '').toLowerCase().includes(search) || 
         (m.genericName && m.genericName.toLowerCase().includes(search)) ||
         (m.commercialName && m.commercialName.toLowerCase().includes(search)) ||
         (m.notes && m.notes.toLowerCase().includes(search));
@@ -2210,6 +2372,14 @@ export default function App() {
             <Pill className="h-5 w-5" />
           </button>
           <button 
+            onClick={() => setActiveTab('farmacorp')}
+            className={`p-2 rounded-lg transition relative ${activeTab === 'farmacorp' ? 'bg-brand-linen text-emerald-700' : 'text-slate-500'}`}
+            title="Catálogo Farmacorp Bolivia (En Vivo)"
+          >
+            <Store className="h-5 w-5 text-emerald-600" />
+            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse"></span>
+          </button>
+          <button 
             onClick={() => setActiveTab('settings')}
             className={`p-2 rounded-lg transition ${activeTab === 'settings' ? 'bg-brand-linen text-brand-rose' : 'text-slate-500'}`}
             title="Ajustes"
@@ -2287,6 +2457,18 @@ export default function App() {
                 {catalogMedications.length}
               </span>
             )}
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('farmacorp')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition cursor-pointer relative ${activeTab === 'farmacorp' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'text-slate-600 hover:bg-brand-linen/60'}`}
+          >
+            <Store className="h-5 w-5 shrink-0 text-emerald-600" />
+            <span>Catálogo Farmacorp</span>
+            <span className="ml-auto bg-emerald-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-2xs">
+              <span className="h-1.5 w-1.5 bg-white rounded-full animate-ping"></span>
+              En Vivo
+            </span>
           </button>
 
           <button 
@@ -2868,7 +3050,8 @@ export default function App() {
                                   .cls-3{fill:#dc968b;}
                                   .cls-4{fill:#f8e4df;}
                                   .cls-19,.cls-20,.cls-5{fill:#454548;}
-                                  .cls-15,.cls-6{fill:#bf815e;}
+                                  .cls-6{fill:#bf815e;}
+                                  .cls-15{fill:#dc968b;}
                                   .cls-7{fill:#c89582;}
                                   .cls-17,.cls-8{fill:none;stroke-miterlimit:10;}
                                   .cls-8{stroke:#b2b1b2;}
@@ -2881,7 +3064,8 @@ export default function App() {
                                   .cls-12{opacity:0.4;}
                                   .cls-13{fill:#faf0ee;}
                                   .cls-14{fill:#faecea;}
-                                  .cls-16,.cls-18{font-size:8px;}
+                                  .cls-16{font-size:10px;}
+                                  .cls-18{font-size:8px;}
                                   .cls-17{stroke:#cdd6e0;stroke-width:1.13px;}
                                   .cls-18{fill:#95a3b8;}
                                   .cls-19{font-size:12.51px;}
@@ -2949,11 +3133,11 @@ export default function App() {
                               {/* 7. Top-Right Rounded Pill Badge */}
                               <rect className="cls-3" x="556.33" y="-22" width="23.56" height="156" rx="11.78"/>
 
-                              {/* Location Icon in Badge */}
-                              <g id="Capa_2-2-2" data-name="Capa 2">
-                                <g id="Capa_1-2-2-2" data-name="Capa 1-2">
-                                  <path className="cls-1" d="M575.27,43.3a8.25,8.25,0,0,1-.84,3.48,24.4,24.4,0,0,1-3.13,5c-.64.81-1.29,1.58-1.92,2.36a1.58,1.58,0,0,1-1.2.73,1.19,1.19,0,0,1-.83-.24A8.52,8.52,0,0,1,566,53.17a39.14,39.14,0,0,1-3.62-5.06,13.87,13.87,0,0,1-1.15-2.51,6.21,6.21,0,0,1-.27-2.42,6.75,6.75,0,0,1,2.33-4.74,7.09,7.09,0,0,1,4.11-1.87,7.2,7.2,0,0,1,7.63,5.19,5.63,5.63,0,0,1,.14.69C575.24,42.81,575.26,43.13,575.27,43.3Zm-7.13-2.82a3.25,3.25,0,1,0,3.24,3.26,3.25,3.25,0,0,0-3.24-3.26Z"/>
-                                </g>
+                              {/* Location Icon in Badge (v2) */}
+                              <g id="badge-location-icon" transform="translate(560.11, 36.5)">
+                                <path className="cls-1" d="M7.67,2.81A4,4,0,0,0,5.33,3.87,3.84,3.84,0,0,0,4,6.56a3.53,3.53,0,0,0,.15,1.37,7.42,7.42,0,0,0,.68,1.49,24.27,24.27,0,0,0,2.22,3.1,5.53,5.53,0,0,0,.77.76h0a.41.41,0,0,0,.26.07.61.61,0,0,0,.45-.28l.37-.44.83-1a14.91,14.91,0,0,0,1.9-3,4.78,4.78,0,0,0,.48-2,4,4,0,0,0,0-.49A.73.73,0,0,0,12,5.76,4.09,4.09,0,0,0,7.67,2.81Zm.38,6.41a2.4,2.4,0,1,1,2.4-2.4,2.39,2.39,0,0,1-2.4,2.4Z"/>
+                                <path className="cls-1" d="M8.07,5.21h0v0A1.65,1.65,0,1,0,9.7,6.88v0A1.63,1.63,0,0,0,8.09,5.21Z"/>
+                                <path className="cls-1" d="M8,0a8,8,0,1,0,8,8A8,8,0,0,0,8,0Zm4.79,6.5a5.66,5.66,0,0,1-.56,2.32,14.92,14.92,0,0,1-2,3.16c-.27.34-.55.69-.83,1-.11.15-.23.29-.35.43a1.33,1.33,0,0,1-1,.61L8,14.1a1.14,1.14,0,0,1-.69-.22,5.6,5.6,0,0,1-.88-.94A23.53,23.53,0,0,1,4.18,9.75a7.49,7.49,0,0,1-.74-1.63,4.24,4.24,0,0,1-.2-1.66A4.59,4.59,0,0,1,4.82,3.21,4.72,4.72,0,0,1,7.58,2a4.86,4.86,0,0,1,5.15,3.5,2.73,2.73,0,0,0,.1.48,4.51,4.51,0,0,1,0,.52Z"/>
                               </g>
 
                               {/* WhatsApp Icon in Badge */}
@@ -2963,9 +3147,12 @@ export default function App() {
                                 </g>
                               </g>
 
-                              {/* Medical Caduceus Badge Icon */}
-                              <path className="cls-1" d="M560.1,119.2a4,4,0,0,1,.22-.69,2.14,2.14,0,0,1,1.43-1.19c.1,0,.13-.06.13-.16,0-.31,0-.62,0-.93a2.55,2.55,0,0,1,5.1,0v3a1.57,1.57,0,1,0,3.14.12,1.53,1.53,0,0,0-.13-.7c-.38-.87-.74-1.74-1.11-2.61a.4.4,0,0,0-.12-.16,3.63,3.63,0,0,1-1.68-2.23c-.37-1.35-.77-2.69-1.14-4a1.91,1.91,0,0,1,1.86-2.42H568c0-.09,0-.16,0-.22a.47.47,0,0,1,.48-.38.44.44,0,0,1,.41.43c0,.41,0,.81,0,1.22a.44.44,0,0,1-.45.43.46.46,0,0,1-.44-.45v-.13a1,1,0,0,0-1.24,1.31q.57,2.1,1.2,4.2a2.67,2.67,0,0,0,2.59,1.88,2.73,2.73,0,0,0,2.57-2c.38-1.34.76-2.69,1.15-4a1,1,0,0,0-.68-1.34,3.06,3.06,0,0,0-.54-.07,1.42,1.42,0,0,0,0,.19.45.45,0,0,1-.89,0c0-.41,0-.81,0-1.22a.45.45,0,0,1,.89,0,.86.86,0,0,0,0,.16c.19,0,.38,0,.56,0a1.92,1.92,0,0,1,1.54,2.42c-.39,1.41-.79,2.82-1.21,4.23a3.42,3.42,0,0,1-1.55,2,.45.45,0,0,0-.18.21c-.38.88-.75,1.77-1.13,2.66a1.42,1.42,0,0,0-.12.54,2.4,2.4,0,0,1-1.49,2.3,4,4,0,0,1-.67.2h-.6l-.06,0a2.45,2.45,0,0,1-2.1-2.44v-3a1.66,1.66,0,0,0-3.29-.32c0,.39,0,.79,0,1.18,0,.1,0,.13.12.16a2.2,2.2,0,0,1,1.63,2.49,2.22,2.22,0,0,1-4.33.28c0-.11-.06-.22-.08-.32Zm3.55.27a1.33,1.33,0,1,0-1.33,1.33A1.34,1.34,0,0,0,563.65,119.47Zm7.5-3.13H570l.59,1.39Z"/>
-                              <path className="cls-1" d="M562.76,119.47a.45.45,0,1,1-.43-.44A.43.43,0,0,1,562.76,119.47Z"/>
+                              {/* Stethoscope / Doctor Badge Icon (v2) */}
+                              <g id="badge-stethoscope-icon" transform="translate(559.95, 108.72)">
+                                <path className="cls-1" d="M14.21,10.89a.89.89,0,0,0-.86-.67h-.2a.93.93,0,0,0-.55.4,1,1,0,0,0-.1.68.89.89,0,0,0,1.06.65.93.93,0,0,0,.55-.4A1,1,0,0,0,14.21,10.89Z"/>
+                                <polygon className="cls-1" points="7.55 10.31 6.89 10.46 7.4 11.12 7.55 10.31"/>
+                                <path className="cls-1" d="M8.16,0a8.16,8.16,0,1,0,8.16,8.16A8.16,8.16,0,0,0,8.16,0Zm5.2,12.73h-.08A1.63,1.63,0,0,1,11.74,11v0a1.61,1.61,0,0,1,.87-1.35h0V9.6l-.06-.28c-.05-.18-.09-.36-.15-.53a1.11,1.11,0,1,0-2.14.6s0,.07,0,.11l.48,2a1.78,1.78,0,0,1-1,2.06l-.42.09h-.5a1.76,1.76,0,0,1-1.45-1.37A.76.76,0,0,0,7.26,12L5.89,10.44a.3.3,0,0,0-.13-.09A2.48,2.48,0,0,1,4.35,9.22L3.59,7.86,2.84,6.51a1.39,1.39,0,0,1,.52-1.9h0l.15-.08.24-.07h.11v-.1A.37.37,0,0,1,4,4.09.43.43,0,0,1,4.22,4h0a.39.39,0,0,1,.35.24c.07.28.13.56.19.83a.34.34,0,0,1,0,.28.33.33,0,0,1-.23.17.32.32,0,0,1-.27,0,.33.33,0,0,1-.17-.23V5.14a1.48,1.48,0,0,0-.29.12.68.68,0,0,0-.23.92l.27.47c.4.69.82,1.4,1.18,2.11a1.88,1.88,0,0,0,2,.91A1.82,1.82,0,0,0,8.46,8c.06-1,.1-2.08.14-3.07A.67.67,0,0,0,8,4.22a.87.87,0,0,0-.32.06v.06a.36.36,0,0,1-.7.19H7c-.07-.27-.13-.55-.19-.83a.42.42,0,0,1,0-.27A.41.41,0,0,1,7,3.25a.35.35,0,0,1,.41.21v.12h.11a1.39,1.39,0,0,1,1.68,1A1.41,1.41,0,0,1,9.2,5a17.69,17.69,0,0,1-.07,1.93A6.4,6.4,0,0,1,9.07,8a2.59,2.59,0,0,1-.8,1.83.11.11,0,0,0,0,.08h0c-.07.38-.13.76-.2,1.16s-.09.55-.14.84a1,1,0,0,0,0,.48,1.06,1.06,0,0,0,1.23.86h0a1,1,0,0,0,.89-1.1.9.9,0,0,0-.09-.32l-.48-2A1.88,1.88,0,1,1,13.14,9l.15.64h.06a1.59,1.59,0,0,1,1.21.6c.07.09.12.19.18.28l.09.16.15.21v.26A1.62,1.62,0,0,1,13.36,12.73Z"/>
+                              </g>
 
                               {/* Top-Right Contact Details (Cleanly right-aligned before the pill badge) */}
                               <text className="cls-11" textAnchor="end" x="546" y="38">
@@ -2998,7 +3185,7 @@ export default function App() {
 
                               {/* 9. Patient Box */}
                               <path className="cls-14" d="M18.13,152.11H402.78c2.41,0,4.37,1.3,4.37,2.9v26.12c0,1.61-2.42,2.91-4.37,2.91H18.13c-2.41,0-4.37-1.61-4.37-2.91V155C13.76,153.41,16.17,152.11,18.13,152.11Z"/>
-                              <text className="cls-15" transform="translate(25 170.5)">
+                              <text className="cls-15" fill="#dc968b" transform="translate(25 170.5)">
                                 PACIENTE:
                               </text>
                               <text className="cls-10" transform="translate(90 170.5)">
@@ -3007,7 +3194,7 @@ export default function App() {
 
                               {/* 10. Age Box */}
                               <path className="cls-14" d="M412.88,152.52H578c1,0,1.88,1.3,1.88,2.91v26.12c0,1.6-1,2.9-1.88,2.9H412.88c-1,0-1.88-1.6-1.88-2.9V155.43C411,153.82,412,152.52,412.88,152.52Z"/>
-                              <text className="cls-15" transform="translate(422 170.5)">
+                              <text className="cls-15" fill="#dc968b" transform="translate(422 170.5)">
                                 EDAD:
                               </text>
                               <text className="cls-10" transform="translate(465 170.5)">
@@ -3016,7 +3203,7 @@ export default function App() {
 
                               {/* 11. Diagnosis Box */}
                               <path className="cls-14" d="M20.05,190.63H573.6c3.47,0,6.29,1.3,6.29,2.9v26.12c0,1.61-3.48,2.91-6.29,2.91H20.05c-3.47,0-6.29-1.61-6.29-2.91V193.53C13.76,191.93,17.23,190.63,20.05,190.63Z"/>
-                              <text className="cls-15" transform="translate(25 209)">
+                              <text className="cls-15" fill="#dc968b" transform="translate(25 209)">
                                 DIAGNÓSTICO:
                               </text>
                               <text className="cls-10" transform="translate(115 209)">
@@ -3024,16 +3211,21 @@ export default function App() {
                               </text>
 
                               {/* 12. Dynamic Prescribed Medications List */}
+                              {/* Prescription Symbol (Rp./) */}
+                              <text className="cls-19" transform="translate(18.13 242)" fontSize="14px" fontWeight="700">
+                                Rp./
+                              </text>
+
                               {(() => {
                                 if (parsedMeds.length === 0) {
                                   return (
-                                    <text className="cls-20" transform="translate(18.13 260)" fill="#94a3b8" fontStyle="italic">
+                                    <text className="cls-20" transform="translate(18.13 268)" fill="#94a3b8" fontStyle="italic">
                                       No se registraron medicamentos para esta receta.
                                     </text>
                                   );
                                 }
 
-                                let curY = 252;
+                                let curY = 264;
                                 return (
                                   <g>
                                     {parsedMeds.map((med, idx) => {
@@ -3097,44 +3289,50 @@ export default function App() {
                                 );
                               })()}
 
-                              {/* 13. Signature Line and Doctor Designation */}
-                              <line className="cls-17" x1="214.6" y1="677.45" x2="413.03" y2="677.45"/>
-                              <text className="cls-11" transform="translate(313.8 691.62)" textAnchor="middle">
-                                Dra. {selectedPrescription.doctorName.replace(/dra\./gi, '').replace(/dr\./gi, '').trim()}
-                              </text>
-                              <text className="cls-18" transform="translate(313.8 702.96)" textAnchor="middle">
-                                Especialista en {doctorProfile?.specialty || 'Dermatología'}
-                              </text>
+                                {/* Column 1: Date */}
+                                <line className="cls-17" x1="50" y1="677.45" x2="250" y2="677.45"/>
+                                <text className="cls-10" fill="#1e293b" textAnchor="middle" x="150" y="672.45">
+                                  {new Date(selectedPrescription.createdAt).toLocaleDateString()}
+                                </text>
+                                <text className="cls-11" fill="#1e293b" textAnchor="middle" x="150" y="691.62">
+                                  Fecha
+                                </text>
 
-                              {/* 14. Date Box Above Footer */}
-                              <path className="cls-14" d="M20.48,722.18H574c3.48,0,6.29.84,6.29,1.87V740.8c0,1-3.47,1.87-6.29,1.87H20.48c-3.47,0-6.29-1-6.29-1.87V724.05C14.19,723,17.67,722.18,20.48,722.18Z"/>
-                              <text className="cls-15" transform="translate(25 735.5)">
-                                FECHA:
-                              </text>
-                              <text className="cls-10" transform="translate(75 735.5)">
-                                {dateFormatted}
-                              </text>
+                                {/* Column 2: Signature */}
+                                <line className="cls-17" x1="345" y1="677.45" x2="545" y2="677.45"/>
+                                <text className="cls-11" textAnchor="middle" x="445" y="691.62">
+                                  Dra. {selectedPrescription.doctorName.replace(/dra\./gi, '').replace(/dr\./gi, '').trim()}
+                                </text>
+                                <text className="cls-18" textAnchor="middle" x="445" y="702.96">
+                                  Especialista en {doctorProfile?.specialty || 'Dermatología'}
+                                </text>
 
                               {/* 15. Footer Bar with Social Icons and Handles */}
-                              {/* TikTok */}
-                              <path className="cls-1" d="M21.28,769.5a7.11,7.11,0,1,0,7.11,7.1A7.11,7.11,0,0,0,21.28,769.5Zm3.68,7a3.46,3.46,0,0,1-2.09-.77v.2c0,1,0,2-.08,2.94a2.49,2.49,0,0,1-2,2.31l-.16,0a2.61,2.61,0,0,1-3-2.12v0a2.58,2.58,0,0,1,2.18-2.92h.85v1.36a4.21,4.21,0,0,0-.71,0,1.23,1.23,0,0,0-.93,1.33,1.26,1.26,0,0,0,2.48.07,1.4,1.4,0,0,0,0-.29l.16-5.46V773H23a2.16,2.16,0,0,0,.51,1.48,2.11,2.11,0,0,0,1.46.66Z"/>
-                              <text className="cls-16" transform="translate(30.7 779.53)">
-                                {doctorProfile?.tiktok || '@dra.karoltalavera'}
-                              </text>
+                              {/* TikTok - aligned to 1cm (28.35pt) left margin */}
+                              <g transform="translate(7.07, 0)">
+                                <path className="cls-1" d="M21.28,769.5a7.11,7.11,0,1,0,7.11,7.1A7.11,7.11,0,0,0,21.28,769.5Zm3.68,7a3.46,3.46,0,0,1-2.09-.77v.2c0,1,0,2-.08,2.94a2.49,2.49,0,0,1-2,2.31l-.16,0a2.61,2.61,0,0,1-3-2.12v0a2.58,2.58,0,0,1,2.18-2.92h.85v1.36a4.21,4.21,0,0,0-.71,0,1.23,1.23,0,0,0-.93,1.33,1.26,1.26,0,0,0,2.48.07,1.4,1.4,0,0,0,0-.29l.16-5.46V773H23a2.16,2.16,0,0,0,.51,1.48,2.11,2.11,0,0,0,1.46.66Z"/>
+                                <text className="cls-16" transform="translate(30.7 779.53)">
+                                  {doctorProfile?.tiktok || '@dra.karoltalavera'}
+                                </text>
+                              </g>
 
-                              {/* Facebook */}
-                              <path className="cls-1" d="M233.45,783.7v-5.11h1.38l.32-2h-2.08l0,0c0-.49,0-1,0-1.47a1,1,0,0,1,1.07-.92h1.32v-1.76c-.28,0-.57-.07-.86-.09a4.94,4.94,0,0,0-1.67.07,2.35,2.35,0,0,0-1.82,2.06c0,.38-.05.78-.06,1.17s0,.63,0,1h-1.6v2H231v5.12l-.65-.13a7.11,7.11,0,0,1-3.4-2,7.19,7.19,0,0,1-.15-9.8,6.69,6.69,0,0,1,4-2.21,7.1,7.1,0,0,1,8.29,5.77,7,7,0,0,1-1.18,5.38,7.17,7.17,0,0,1-4.32,2.92Z"/>
-                              <text className="cls-16" transform="translate(241.38 778.92)">
-                                {doctorProfile?.facebook || 'Dra. Karol Talavera - Dermatóloga'}
-                              </text>
+                              {/* Facebook - centered column */}
+                              <g transform="translate(-15, 0)">
+                                <path className="cls-1" d="M233.45,783.7v-5.11h1.38l.32-2h-2.08l0,0c0-.49,0-1,0-1.47a1,1,0,0,1,1.07-.92h1.32v-1.76c-.28,0-.57-.07-.86-.09a4.94,4.94,0,0,0-1.67.07,2.35,2.35,0,0,0-1.82,2.06c0,.38-.05.78-.06,1.17s0,.63,0,1h-1.6v2H231v5.12l-.65-.13a7.11,7.11,0,0,1-3.4-2,7.19,7.19,0,0,1-.15-9.8,6.69,6.69,0,0,1,4-2.21,7.1,7.1,0,0,1,8.29,5.77,7,7,0,0,1-1.18,5.38,7.17,7.17,0,0,1-4.32,2.92Z"/>
+                                <text className="cls-16" transform="translate(241.38 778.92)">
+                                  {doctorProfile?.facebook || 'Dra. Karol Talavera - Dermatóloga'}
+                                </text>
+                              </g>
 
-                              {/* Instagram */}
-                              <path className="cls-1" d="M517.77,769.24a7.36,7.36,0,1,1-7.38,7.28A7.36,7.36,0,0,1,517.77,769.24Zm-4.55,7.36v1.64a4.44,4.44,0,0,0,0,.63,2.35,2.35,0,0,0,1.39,2,3.15,3.15,0,0,0,1.32.27h3.59a3.07,3.07,0,0,0,1.39-.31,2.39,2.39,0,0,0,1.34-2.21c0-1.22,0-2.44,0-3.66a3.81,3.81,0,0,0-.07-.75,2.32,2.32,0,0,0-1.5-1.86,3.52,3.52,0,0,0-1.2-.2h-3.34a5.24,5.24,0,0,0-.79,0,2.33,2.33,0,0,0-2,1.54,3,3,0,0,0-.2,1.11Z"/>
-                              <path className="cls-1" d="M517.76,780.25c-.64,0-1.28,0-1.91,0a1.68,1.68,0,0,1-1.55-.83,2,2,0,0,1-.25-.92c0-1.27,0-2.54,0-3.8a1.59,1.59,0,0,1,1-1.58,2.42,2.42,0,0,1,.8-.16c1.26,0,2.52,0,3.78,0a1.67,1.67,0,0,1,1.6.88,1.94,1.94,0,0,1,.21.85c0,1.27,0,2.55,0,3.82a1.64,1.64,0,0,1-1.56,1.72l-.17,0Zm0-6a2.39,2.39,0,1,0,2.39,2.39A2.38,2.38,0,0,0,517.76,774.22Zm2.4.47a.46.46,0,0,0,.48-.46.47.47,0,0,0-.47-.48.46.46,0,0,0-.47.46A.45.45,0,0,0,520.16,774.69Z"/>
-                              <path className="cls-1" d="M519.31,776.6a1.55,1.55,0,1,1-1.56-1.55A1.56,1.56,0,0,1,519.31,776.6Z"/>
-                              <text className="cls-16" transform="translate(528.7 778.99)">
-                                {doctorProfile?.instagram || '@dermatista'}
-                              </text>
+                              {/* Instagram - respecting 1cm (28.35pt) right margin with safe padding */}
+                              <g transform="translate(-30, 0)">
+                                <path className="cls-1" d="M517.77,769.24a7.36,7.36,0,1,1-7.38,7.28A7.36,7.36,0,0,1,517.77,769.24Zm-4.55,7.36v1.64a4.44,4.44,0,0,0,0,.63,2.35,2.35,0,0,0,1.39,2,3.15,3.15,0,0,0,1.32.27h3.59a3.07,3.07,0,0,0,1.39-.31,2.39,2.39,0,0,0,1.34-2.21c0-1.22,0-2.44,0-3.66a3.81,3.81,0,0,0-.07-.75,2.32,2.32,0,0,0-1.5-1.86,3.52,3.52,0,0,0-1.2-.2h-3.34a5.24,5.24,0,0,0-.79,0,2.33,2.33,0,0,0-2,1.54,3,3,0,0,0-.2,1.11Z"/>
+                                <path className="cls-1" d="M517.76,780.25c-.64,0-1.28,0-1.91,0a1.68,1.68,0,0,1-1.55-.83,2,2,0,0,1-.25-.92c0-1.27,0-2.54,0-3.8a1.59,1.59,0,0,1,1-1.58,2.42,2.42,0,0,1,.8-.16c1.26,0,2.52,0,3.78,0a1.67,1.67,0,0,1,1.6.88,1.94,1.94,0,0,1,.21.85c0,1.27,0,2.55,0,3.82a1.64,1.64,0,0,1-1.56,1.72l-.17,0Zm0-6a2.39,2.39,0,1,0,2.39,2.39A2.38,2.38,0,0,0,517.76,774.22Zm2.4.47a.46.46,0,0,0,.48-.46.47.47,0,0,0-.47-.48.46.46,0,0,0-.47.46A.45.45,0,0,0,520.16,774.69Z"/>
+                                <path className="cls-1" d="M519.31,776.6a1.55,1.55,0,1,1-1.56-1.55A1.56,1.56,0,0,1,519.31,776.6Z"/>
+                                <text className="cls-16" transform="translate(528.7 778.99)">
+                                  {doctorProfile?.instagram || '@dermatista'}
+                                </text>
+                              </g>
                             </svg>
                           </div>
                         );
@@ -3297,6 +3495,257 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* TAB: FARMACORP LIVE CATALOG INTEGRATION */}
+          {activeTab === 'farmacorp' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Header banner */}
+              <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-800 rounded-2xl p-6 lg:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/20 via-transparent to-transparent pointer-events-none"></div>
+                <div className="relative z-10 space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/30 border border-emerald-400/40 rounded-full text-emerald-200 text-xs font-bold">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span>Conexión en Vivo con Farmacorp Bolivia</span>
+                  </div>
+                  <h1 className="text-2xl lg:text-3xl font-black tracking-tight">Catálogo Farmacorp (Bolivia)</h1>
+                  <p className="text-emerald-100 text-sm max-w-2xl leading-relaxed">
+                    Consulta stock, precios en Bolivianos (Bs.), laboratorios y descripciones de productos directamente desde la API oficial de Farmacorp para agregarlos a tus recetas médicas en tiempo real.
+                  </p>
+                </div>
+
+                <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                  <div className="bg-emerald-950/60 border border-emerald-700/50 rounded-xl p-3.5 text-center min-w-[160px]">
+                    <span className="text-[10px] text-emerald-300 uppercase tracking-wider block font-bold">Estado de Conexión</span>
+                    <div className="flex items-center justify-center gap-1.5 mt-1 font-bold text-sm text-emerald-100">
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+                      <span>{farmacorpStatus?.connected ? 'En Línea (200 OK)' : 'Conectando...'}</span>
+                    </div>
+                    {farmacorpStatus?.latencyMs && (
+                      <span className="text-[10px] text-emerald-400 block mt-0.5">Latencia: {farmacorpStatus.latencyMs}ms</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      checkFarmacorpStatus();
+                      loadFarmacorpProducts(farmacorpSearch || farmacorpCategory);
+                    }}
+                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-emerald-950/40"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${farmacorpLoading ? 'animate-spin' : ''}`} />
+                    <span>Actualizar Catálogo</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Categories Bar */}
+              <div className="bg-white p-4 lg:p-6 rounded-2xl border border-brand-border shadow-xs space-y-4">
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <div className="relative flex-1 w-full">
+                    <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={farmacorpSearch}
+                      onChange={(e) => setFarmacorpSearch(e.target.value)}
+                      placeholder="Buscar por medicamento, principio activo, marca o producto (ej. CeraVe, Protector solar, Paracetamol, Clobetasol)..."
+                      className="w-full pl-10 pr-4 py-2.5 bg-brand-linen/30 focus:bg-white border border-brand-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium transition"
+                    />
+                    {farmacorpSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setFarmacorpSearch('')}
+                        className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                    {['dermatologia', 'protector solar', 'crema', 'cerave', 'eucerin', 'analgesico', 'vitamina'].map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setFarmacorpCategory(cat);
+                          setFarmacorpSearch('');
+                          loadFarmacorpProducts(cat);
+                        }}
+                        className={`text-xs px-3.5 py-2 rounded-xl border font-semibold transition cursor-pointer whitespace-nowrap capitalize ${
+                          farmacorpCategory === cat && !farmacorpSearch
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                            : 'bg-white text-slate-700 border-brand-border hover:bg-brand-linen/50'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Results Grid */}
+              {farmacorpLoading && farmacorpProducts.length === 0 ? (
+                <div className="text-center py-28 bg-white rounded-2xl border border-brand-border shadow-xs flex flex-col items-center justify-center space-y-4">
+                  <Loader2 className="h-10 w-10 text-emerald-600 animate-spin" />
+                  <div>
+                    <p className="font-bold text-slate-800 text-base">Consultando catálogo en vivo de Farmacorp Bolivia...</p>
+                    <p className="text-xs text-slate-500 mt-1">Conectando de forma segura con la pasarela de productos.</p>
+                  </div>
+                </div>
+              ) : farmacorpProducts.length === 0 ? (
+                <div className="text-center py-24 bg-white rounded-2xl border border-brand-border shadow-xs flex flex-col items-center justify-center space-y-3">
+                  <Store className="h-12 w-12 text-slate-300" />
+                  <div>
+                    <p className="font-bold text-slate-700 text-base">No se encontraron productos con ese término</p>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto mt-0.5">Prueba buscando otro principio activo o nombre comercial (ej. Protector solar, CeraVe, Ibuprofeno).</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Mostrando {farmacorpProducts.length} productos en tiempo real desde Farmacorp Bolivia
+                    </span>
+                    <span className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                      ✓ Precios y Disponibilidad Verificados
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {farmacorpProducts.map((product) => {
+                      const isExpanded = expandedFarmacorpId === product.id;
+                      const isJustSaved = farmacorpSavedId === product.id;
+
+                      return (
+                        <div
+                          key={product.id}
+                          className="bg-white rounded-2xl border border-brand-border shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between overflow-hidden group"
+                        >
+                          <div>
+                            {/* Product Header / Image */}
+                            <div className="relative h-48 bg-slate-50 border-b border-brand-border/60 p-4 flex items-center justify-center overflow-hidden">
+                              <img
+                                src={product.image}
+                                alt={product.title}
+                                className="h-full w-full object-contain object-center group-hover:scale-105 transition-transform duration-300"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://farmacorp.com/cdn/shop/files/logo-farmacorp.png';
+                                }}
+                              />
+                              <div className="absolute top-3 left-3 flex flex-col gap-1 items-start">
+                                <span className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1">
+                                  <Store className="h-3 w-3" />
+                                  <span>Farmacorp</span>
+                                </span>
+                                {product.available ? (
+                                  <span className="bg-emerald-50 text-emerald-800 font-bold text-[9.5px] px-2 py-0.5 rounded-md border border-emerald-200">
+                                    En Stock
+                                  </span>
+                                ) : (
+                                  <span className="bg-amber-50 text-amber-800 font-bold text-[9.5px] px-2 py-0.5 rounded-md border border-amber-200">
+                                    Agotado
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-xl border border-brand-border shadow-xs text-right">
+                                <span className="text-[10px] text-slate-400 block font-semibold leading-none">Precio</span>
+                                <span className="text-sm font-black text-emerald-700">{product.priceFormatted}</span>
+                              </div>
+                            </div>
+
+                            {/* Product Details */}
+                            <div className="p-5 space-y-3">
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">{product.vendor}</span>
+                                <h3 className="font-bold text-brand-charcoal text-sm leading-snug line-clamp-2" title={product.title}>
+                                  {product.title}
+                                </h3>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                <span className="text-[10px] font-semibold bg-brand-linen text-slate-700 px-2 py-0.5 rounded-md border border-brand-border">
+                                  Forma: {product.guessedForm}
+                                </span>
+                                {product.guessedDose && (
+                                  <span className="text-[10px] font-semibold bg-sky-50 text-sky-800 px-2 py-0.5 rounded-md border border-sky-200">
+                                    Dosis: {product.guessedDose}
+                                  </span>
+                                )}
+                              </div>
+
+                              {product.bodyText && (
+                                <p className={`text-xs text-slate-600 leading-relaxed ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                  {product.bodyText}
+                                </p>
+                              )}
+
+                              {product.bodyText && product.bodyText.length > 100 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedFarmacorpId(isExpanded ? null : product.id)}
+                                  className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer pt-0.5"
+                                >
+                                  {isExpanded ? 'Ver menos' : 'Leer descripción completa...'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Card Footer Actions */}
+                          <div className="p-4 bg-brand-linen/20 border-t border-brand-border/60 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePrescribeFarmacorpProduct(product)}
+                              className="flex-1 py-2.5 bg-brand-rose hover:bg-brand-rose/90 text-white font-bold rounded-xl text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                              title="Usar este producto de Farmacorp directamente en una nueva receta médica"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              <span>Recetar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSaveFarmacorpToCatalog(product)}
+                              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                                isJustSaved
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'bg-white hover:bg-emerald-50 text-slate-700 border border-brand-border hover:border-emerald-300 hover:text-emerald-700'
+                              }`}
+                              title="Guardar este medicamento en tu catálogo personal de la nube"
+                            >
+                              {isJustSaved ? (
+                                <>
+                                  <Check className="h-3.5 w-3.5" />
+                                  <span>¡Guardado!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="h-3.5 w-3.5" />
+                                  <span>Guardar</span>
+                                </>
+                              )}
+                            </button>
+
+                            <a
+                              href={product.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-2.5 bg-white hover:bg-slate-100 border border-brand-border text-slate-500 rounded-xl transition"
+                              title="Ver producto en la web oficial de Farmacorp"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -50,6 +50,142 @@ async function startServer() {
     }
   });
 
+  // --- Live Farmacorp Bolivia Catalog API Integration ---
+  const farmacorpCache: Map<string, { data: any; expiry: number }> = new Map();
+
+  app.get('/api/farmacorp/status', async (req, res) => {
+    const t0 = Date.now();
+    try {
+      const resp = await fetch('https://farmacorp.com/search/suggest.json?q=salud&resources%5Btype%5D=product&resources%5Blimit%5D=1', {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(5000)
+      });
+      const latencyMs = Date.now() - t0;
+      if (resp.ok) {
+        return res.json({
+          status: 'online',
+          store: 'Farmacorp Bolivia (farmacorp.com)',
+          connected: true,
+          latencyMs,
+          timestamp: new Date().toISOString()
+        });
+      }
+      res.json({
+        status: 'degraded',
+        connected: false,
+        latencyMs,
+        error: `HTTP ${resp.status}`
+      });
+    } catch (e: any) {
+      res.json({
+        status: 'offline',
+        connected: false,
+        error: e.message || 'Error de conexión'
+      });
+    }
+  });
+
+  app.get('/api/farmacorp/search', async (req, res) => {
+    try {
+      const rawQuery = ((req.query.q as string) || '').trim();
+      const category = ((req.query.category as string) || '').trim();
+      
+      const searchTerm = rawQuery || (category ? category : 'dermatologia');
+      const cacheKey = searchTerm.toLowerCase();
+
+      const cached = farmacorpCache.get(cacheKey);
+      if (cached && cached.expiry > Date.now()) {
+        return res.json(cached.data);
+      }
+
+      // Query Farmacorp Live Shopify suggest API
+      const searchUrl = `https://farmacorp.com/search/suggest.json?q=${encodeURIComponent(searchTerm)}&resources%5Btype%5D=product&resources%5Blimit%5D=24`;
+      
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Farmacorp respondió con estado ${response.status}`);
+      }
+
+      const json: any = await response.json();
+      const rawProducts = json?.resources?.results?.products || [];
+
+      // Clean & normalize products
+      const products = rawProducts.map((p: any) => {
+        const plainBody = (p.body || '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        const numPrice = parseFloat(p.price) || 0;
+        const formattedPrice = `Bs. ${numPrice.toFixed(2)}`;
+
+        const titleLower = (p.title || '').toLowerCase();
+        let guessedForm = 'Crema';
+        if (titleLower.includes('gel')) guessedForm = 'Gel';
+        else if (titleLower.includes('pomada')) guessedForm = 'Pomada';
+        else if (titleLower.includes('ungüento') || titleLower.includes('unguento')) guessedForm = 'Ungüento';
+        else if (titleLower.includes('solución') || titleLower.includes('solucion') || titleLower.includes('gotas')) guessedForm = 'Solución';
+        else if (titleLower.includes('loción') || titleLower.includes('locion')) guessedForm = 'Loción';
+        else if (titleLower.includes('espuma') || titleLower.includes('mousse')) guessedForm = 'Espuma';
+        else if (titleLower.includes('shampoo') || titleLower.includes('champu')) guessedForm = 'Shampoo';
+        else if (titleLower.includes('tableta') || titleLower.includes('comprimido') || titleLower.includes('capsula') || titleLower.includes('cápsula')) guessedForm = 'Comprimidos';
+        else if (titleLower.includes('spray') || titleLower.includes('aerosol')) guessedForm = 'Spray';
+        else if (titleLower.includes('serum') || titleLower.includes('suero')) guessedForm = 'Serum';
+
+        const doseMatch = p.title.match(/(\d+(?:\.\d+)?\s*(?:mg|g|ml|mcg|%|ui|gr|kg))/i);
+        const guessedDose = doseMatch ? doseMatch[1] : '';
+
+        return {
+          id: String(p.id || p.url || Math.random()),
+          title: p.title || 'Producto Farmacorp',
+          vendor: p.vendor || 'Farmacorp Bolivia',
+          price: numPrice,
+          priceFormatted: formattedPrice,
+          rawPrice: p.price,
+          compareAtPrice: p.compare_at_price,
+          url: p.url ? (p.url.startsWith('http') ? p.url : `https://farmacorp.com${p.url}`) : 'https://farmacorp.com',
+          image: p.image || 'https://farmacorp.com/cdn/shop/files/logo-farmacorp.png',
+          available: p.available !== false,
+          bodyHtml: p.body || '',
+          bodyText: plainBody,
+          guessedForm,
+          guessedDose
+        };
+      });
+
+      const resultPayload = {
+        success: true,
+        query: searchTerm,
+        count: products.length,
+        products,
+        source: 'Farmacorp Bolivia Live API',
+        timestamp: new Date().toISOString()
+      };
+
+      // Cache for 5 minutes
+      farmacorpCache.set(cacheKey, {
+        data: resultPayload,
+        expiry: Date.now() + 5 * 60 * 1000
+      });
+
+      res.json(resultPayload);
+    } catch (error: any) {
+      console.error("Farmacorp API Error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || "Error al conectar en vivo con Farmacorp Bolivia",
+        products: []
+      });
+    }
+  });
+
   // Cloudflare Workers KV API Simulator (for local dev & preview)
   const localKvStore: Record<string, any> = {};
   const kvDataFile = path.resolve(__dirname, 'kv-storage-dev.json');
