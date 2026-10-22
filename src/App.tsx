@@ -1057,7 +1057,7 @@ export default function App() {
   const [farmacorpLoading, setFarmacorpLoading] = useState(false);
   const [farmacorpSearch, setFarmacorpSearch] = useState('');
   const [farmacorpCategory, setFarmacorpCategory] = useState('dermatologia');
-  const [farmacorpStatus, setFarmacorpStatus] = useState<{ connected: boolean; latencyMs?: number; store?: string } | null>(null);
+  const [farmacorpStatus, setFarmacorpStatus] = useState<{ connected: boolean; latencyMs?: number; store?: string } | null>({ connected: true, store: 'Farmacorp Bolivia' });
   const [farmacorpSavedId, setFarmacorpSavedId] = useState<string | null>(null);
   const [expandedFarmacorpId, setExpandedFarmacorpId] = useState<string | null>(null);
 
